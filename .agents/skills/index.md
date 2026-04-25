@@ -25,6 +25,7 @@ is agent-facing routing metadata; the actual procedures live in each
 | *plan / spec / PRD breakdown* | `to-issues` | Vertical slices, tracer bullets. |
 | *refactor request* | `request-refactor-plan` | Tiny-commit plan as an issue. |
 | *plan stress-test* | `grill-me`, `domain-model` | Interview to resolve every branch. |
+| *brainstorm / roadmap / "what could we do about X"* | `ideate`, `domain-model` | Span all four horizons; classify 1st/2nd/3rd-order effects; recommend a portfolio. |
 | *any git operation* | `git-style` | Mirror commit shape; never force-push to `main`. |
 | *fork template into a new product* | `initialize`, `bootstrap-product` | Run `./repo.sh initialize`. |
 
