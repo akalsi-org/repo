@@ -21,6 +21,12 @@ the source path remains canonical. Upload/publish commands may fail on missing
 or invalid configured inputs because those commands are explicitly maintaining
 the cache.
 
+Commands that can perform an expensive build or bootstrap step should expose a
+`--no-build` or equivalent reuse flag when they are also useful after an
+explicit prior build. CI should prefer the explicit build step followed by
+reuse-mode test, package, benchmark, or system-test steps so failures identify
+the stage that broke and wrappers do not rebuild the same output repeatedly.
+
 ## 5. Repo Layout
 
 - `repo.sh` is the environment launcher.
