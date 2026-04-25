@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""Idempotent post-clone initializer.
+
+Reads or prompts for product knobs, persists them in .agents/repo.json,
+renders LICENSE and README from stubs, seeds CONTEXT.md and the first
+ADR, runs setup + bootstrap + agent_check, and stamps completion.
+
+Run via:  ./repo.sh initialize [flags]
+
+Flags:
+  --name TEXT             product name
+  --owner TEXT            license owner (legal name or org)
+  --license-year YEAR     license year (default: current year)
+  --description TEXT      one-line product description
+  --force                 re-run all steps even if already initialized
+  --non-interactive       fail rather than prompt for missing values
+"""
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(os.environ.get("REPO_ROOT", Path(__file__).resolve().parents[1]))
+REPO_LOCAL = Path(os.environ.get("REPO_LOCAL", REPO_ROOT / ".local"))
+STAMP = REPO_LOCAL / "stamps" / "initialized"
+REPO_JSON = REPO_ROOT / ".agents" / "repo.json"
+LICENSE_PATH = REPO_ROOT / "LICENSE"
+README_PATH = REPO_ROOT / "README.md"
+CONTEXT_PATH = REPO_ROOT / "CONTEXT.md"
+ADR_DIR = REPO_ROOT / "docs" / "adr"
+ADR_INDEX = ADR_DIR / "index.md"
+FIRST_ADR = ADR_DIR / "0001_template_adoption.md"
+
+POLYFORM_STRICT_HEADER = "# PolyForm Strict License 1.0.0"
+POLYFORM_STRICT_URL = "https://polyformproject.org/licenses/strict/1.0.0"
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--name", default=None)
+    p.add_argument("--owner", default=None)
+    p.add_argument("--license-year", default=None)
+    p.add_argument("--description", default=None)
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--non-interactive", action="store_true")
+    return p.parse_args()
+
+
+def load_repo_json() -> dict:
+    if REPO_JSON.exists():
+        return json.loads(REPO_JSON.read_text())
+    return {}
+
+
+def save_repo_json(data: dict) -> None:
+    REPO_JSON.parent.mkdir(parents=True, exist_ok=True)
+    REPO_JSON.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def resolve_knobs(args: argparse.Namespace, current: dict) -> dict:
+    product = current.get("product", {}) if isinstance(current.get("product"), dict) else {}
+
+    def pick(flag, key, default=None, prompt=None):
+        if flag is not None:
+            return flag
+        if product.get(key):
+            return product[key]
+        if default is not None and not prompt:
+            return default
+        if args.non_interactive:
+            sys.exit(f"initialize: --non-interactive but missing {key}")
+        try:
+            answer = input(f"{prompt} ").strip()
+        except EOFError:
+            sys.exit(f"initialize: stdin closed but missing {key}")
+        if not answer:
+            if default is not None:
+                return default
+            sys.exit(f"initialize: {key} is required")
+        return answer
+
+    year_default = str(datetime.date.today().year)
+    knobs = {
+        "name": pick(args.name, "name", prompt="Product name?"),
+        "owner": pick(args.owner, "owner", prompt="License owner (legal name or org)?"),
+        "license_year": pick(args.license_year, "license_year", default=year_default, prompt=f"License year [{year_default}]?"),
+        "description": pick(args.description, "description", default="", prompt="One-line description (optional, blank to skip)?"),
+    }
+    return knobs
+
+
+def render_license(knobs: dict) -> None:
+    body = f"""{POLYFORM_STRICT_HEADER}
+
+Copyright (c) {knobs['license_year']} {knobs['owner']}
+
+This software is licensed under the PolyForm Strict License 1.0.0.
+The full license text is published at:
+
+    {POLYFORM_STRICT_URL}
+
+A copy must accompany any redistribution. By using this software you
+accept the terms of the PolyForm Strict License 1.0.0 in full.
+"""
+    LICENSE_PATH.write_text(body)
+
+
+def render_readme(knobs: dict) -> None:
+    desc = knobs["description"] or "<one-line description>"
+    body = f"""# {knobs['name']}
+
+{desc}
+
+## Quick start
+
+```sh
+./repo.sh initialize     # one-time setup; idempotent
+./repo.sh                # open a shell with REPO_* env vars set
+./repo.sh agent_check --stale-only
+```
+
+## Verb surface
+
+Every command goes through `./repo.sh <verb> [args]`:
+
+| Verb | Purpose |
+|------|---------|
+| `initialize` | Idempotent post-clone setup. |
+| `setup` | Install/uninstall managed git hooks and configured VSCode plugins. |
+| `agent` | Query and maintain the repository agent knowledge base. |
+| `agent_check` | Validate skill routing, docs references, and command inventory. |
+| `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
+
+## Layout
+
+- `AGENTS.md` — agent-facing repo contract.
+- `CONTEXT.md` — domain language for this product.
+- `docs/adr/` — architectural decision records.
+- `.agents/` — skills, KB sources, repo.json.
+- `bootstrap/` — toolchain fetcher helpers + per-tool specs.
+- `tools/` — every command exposed via `./repo.sh`.
+- `.local/` — toolchain cache, stamps, build state. Not committed.
+
+## Integrations
+
+| Service | Default credential source | Notes |
+|---------|---------------------------|-------|
+| GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`) | Used by `gh` and any tool calling the GitHub API. |
+
+When adding a new third-party integration, document it in this table
+and in `AGENTS.md` Integrations.
+
+## License
+
+PolyForm Strict License 1.0.0 — see [LICENSE](./LICENSE). Commercial
+use requires a separate agreement with the licensor.
+"""
+    README_PATH.write_text(body)
+
+
+def seed_context(knobs: dict) -> None:
+    if CONTEXT_PATH.exists():
+        return
+    body = f"""# {knobs['name']}
+
+{knobs['description'] or 'Domain context for this product.'}
+
+## Language
+
+<!-- Define canonical terms here as they emerge. Format:
+
+**TermName**:
+One-sentence definition.
+_Avoid_: synonym1, synonym2
+
+-->
+
+## Relationships
+
+<!-- Express relationships between terms once at least two are defined. -->
+
+## Flagged ambiguities
+
+<!-- Capture term conflicts and their resolutions. -->
+"""
+    CONTEXT_PATH.write_text(body)
+
+
+def seed_first_adr(knobs: dict) -> None:
+    ADR_DIR.mkdir(parents=True, exist_ok=True)
+    if not ADR_INDEX.exists():
+        ADR_INDEX.write_text(
+            "# Architectural Decision Records\n\n"
+            "| # | Title |\n"
+            "|---|-------|\n"
+            "| 0001 | [Adopt template + PolyForm Strict 1.0.0](0001_template_adoption.md) |\n"
+        )
+    if not FIRST_ADR.exists():
+        body = f"""# Adopt template + PolyForm Strict 1.0.0
+
+This product was bootstrapped from the agentic template. We license
+under PolyForm Strict 1.0.0 (commercial-use restricted, source-available)
+because {knobs['name']} is intended for sale; permissive licenses
+(MIT/Apache) would let third parties resell our work without terms.
+"""
+        FIRST_ADR.write_text(body)
+
+
+def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> int:
+    print(f"$ {' '.join(cmd)}")
+    proc = subprocess.run(cmd, cwd=cwd or REPO_ROOT)
+    if check and proc.returncode != 0:
+        sys.exit(proc.returncode)
+    return proc.returncode
+
+
+def stamp_complete() -> None:
+    STAMP.parent.mkdir(parents=True, exist_ok=True)
+    STAMP.write_text(datetime.datetime.now().isoformat() + "\n")
+
+
+def main() -> int:
+    args = parse_args()
+
+    if STAMP.exists() and not args.force:
+        print(f"initialize: already initialized ({STAMP.read_text().strip()}). Use --force to re-run.")
+        return 0
+
+    current = load_repo_json()
+    knobs = resolve_knobs(args, current)
+
+    current.setdefault("product", {})
+    current["product"].update(knobs)
+    save_repo_json(current)
+
+    render_license(knobs)
+    render_readme(knobs)
+    seed_context(knobs)
+    seed_first_adr(knobs)
+
+    repo_sh = str(REPO_ROOT / "repo.sh")
+    run([repo_sh, "setup"], check=False)
+    run([repo_sh, "true"], check=False)
+    run([repo_sh, "agent_check", "--stale-only"], check=False)
+
+    stamp_complete()
+
+    print()
+    print(f"initialize: {knobs['name']} ready.")
+    print(f"  product knobs: {REPO_JSON}")
+    print(f"  license:       {LICENSE_PATH}")
+    print(f"  readme:        {README_PATH}")
+    print(f"  context:       {CONTEXT_PATH}")
+    print(f"  adr index:     {ADR_INDEX}")
+    print(f"  next:          ./repo.sh agent query probe --path AGENTS.md --verb change")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

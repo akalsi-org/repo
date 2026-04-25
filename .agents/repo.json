@@ -1,5 +1,5 @@
 {
-  "commands": ["agent", "agent_check", "setup", "source_mirror"],
+  "commands": ["agent", "agent_check", "initialize", "setup", "source_mirror"],
   "command_table": "AGENTS.md",
   "subsystem_descriptor_globs": [],
   "vscode_extensions": [],

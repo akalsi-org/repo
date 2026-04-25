@@ -253,6 +253,11 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
   for skill in skill_files:
     rel_skill = skill.relative_to(root).as_posix()
     name = skill.parent.name
+    if "_" in name:
+      issues.append(
+        f"skill folder name uses '_': {rel_skill} — skill names must use '-' "
+        f"(template naming carve-out, see docs/adr/0004_skill_names_hyphens.md)"
+      )
     if f"`{name}`" not in agents:
       issues.append(f"skill missing from AGENTS.md §2.1: {rel_skill}")
     fm = _frontmatter(_read(skill))

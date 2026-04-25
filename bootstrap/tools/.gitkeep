@@ -1,0 +1,3 @@
+# Per-tool fetcher specs live here. Each <tool>.sh sources either
+# bootstrap/fetch_binary.sh or bootstrap/fetch_source.sh. See
+# .agents/skills/bootstrap-toolchain/SKILL.md for the spec shape.
