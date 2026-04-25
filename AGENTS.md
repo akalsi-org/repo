@@ -27,14 +27,22 @@ explicit prior build. CI should prefer the explicit build step followed by
 reuse-mode test, package, benchmark, or system-test steps so failures identify
 the stage that broke and wrappers do not rebuild the same output repeatedly.
 
+Prefer `_` over `-` for new names: files, directories, config keys, Python
+modules, generated identifiers, cache keys, and internal command names. CLI
+arguments remain conventional `-` / `--` flags. Keep existing hyphenated public
+interfaces stable unless deliberately migrating them with compatibility shims.
+
 ## 5. Repo Layout
 
 - `repo.sh` is the environment launcher.
 - `.agents/repo.json` is the repository contract consumed by tools.
+- `.editorconfig` is the editor baseline; keep it when adapting the template.
 - `bootstrap/vars/local-cache-key.sh` invalidates reusable CI `.local/` caches.
 - `.agents/skills/`, `.agents/reviews/`, and `.agents/kb-src/` hold agent assets.
 - `tools/` holds commands exposed through `repo.sh`.
 - `tools/git-hooks/pre-commit` is the managed pre-commit hook source.
+  `tools/setup` can also install configured local VSCode plugins from
+  `.agents/repo.json` without hard-coding any project-specific plugin.
 
 ## 8. Commands
 
@@ -42,7 +50,7 @@ the stage that broke and wrappers do not rebuild the same output repeatedly.
 |---------|------|---------|
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
 | `agent-check` | Python | Check skill routing, docs references, and configured command inventory. |
-| `setup` | Python | Install or report local managed repository hooks. |
+| `setup` | Python | Install/status/uninstall local managed hooks and configured VSCode plugins. |
 | `source-mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 
 ## 14. CI

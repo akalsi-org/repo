@@ -2,6 +2,7 @@
   "commands": ["agent", "agent-check", "setup", "source-mirror"],
   "command_table": "AGENTS.md",
   "subsystem_descriptor_globs": [],
+  "vscode_extensions": [],
   "source_mirror_repo": null,
   "bootstrap_artifacts": []
 }

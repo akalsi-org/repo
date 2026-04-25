@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import stat
@@ -20,6 +21,39 @@ def warn(msg: str) -> None:
 
 def note(msg: str) -> None:
   print(f"setup: {msg}", file=sys.stderr)
+
+
+def truthy_env(name: str) -> bool:
+  value = os.environ.get(name, "")
+  return value.lower() not in {"", "0", "false", "no"}
+
+
+def repo_config() -> dict[str, object]:
+  path = ROOT / ".agents" / "repo.json"
+  if not path.is_file():
+    return {}
+  raw = json.loads(path.read_text(encoding="utf-8"))
+  if not isinstance(raw, dict):
+    raise SystemExit(".agents/repo.json must contain a JSON object")
+  return raw
+
+
+def vscode_extensions() -> list[dict[str, pathlib.Path]]:
+  raw = repo_config().get("vscode_extensions", [])
+  if raw is None:
+    return []
+  if not isinstance(raw, list):
+    raise SystemExit("vscode_extensions must be a list")
+  out: list[dict[str, pathlib.Path]] = []
+  for item in raw:
+    if not isinstance(item, dict):
+      raise SystemExit("vscode_extensions entries must be objects")
+    name = item.get("name")
+    path = item.get("path")
+    if not isinstance(name, str) or not isinstance(path, str):
+      raise SystemExit("vscode_extensions entries need name and path")
+    out.append({"name": name, "path": (ROOT / path).resolve()})
+  return out
 
 
 def git_path(*args: str) -> pathlib.Path | None:
@@ -102,36 +136,176 @@ def install_hooks() -> int:
   return count
 
 
-def status() -> None:
+def candidate_extension_dirs() -> list[pathlib.Path]:
+  home = pathlib.Path.home()
+  return [
+      home / ".vscode" / "extensions",
+      home / ".vscode-server" / "extensions",
+      home / ".vscode-oss" / "extensions",
+      home / ".vscodium" / "extensions",
+      home / ".cursor" / "extensions",
+  ]
+
+
+def is_configured_extension_target(path: pathlib.Path) -> bool:
+  wanted = {ext["path"].resolve(strict=False) for ext in vscode_extensions()}
+  return path.resolve(strict=False) in wanted
+
+
+def install_vscode_extensions() -> int:
+  count = 0
+  extensions = vscode_extensions()
+  if not extensions:
+    return 0
+  for ext in extensions:
+    src = ext["path"]
+    if not src.exists():
+      warn(f"VSCode extension source missing: {src}")
+      continue
+    for ext_dir in candidate_extension_dirs():
+      if not ext_dir.is_dir():
+        continue
+      dst = ext_dir / ext["name"]
+      try:
+        dst.lstat()
+      except FileNotFoundError:
+        link_to(src, dst)
+        note(f"installed VSCode extension {ext['name']}: {dst}")
+        count += 1
+        continue
+      if dst.is_symlink():
+        current = resolved_symlink(dst)
+        if current == src.resolve(strict=False):
+          continue
+        if is_configured_extension_target(current):
+          dst.unlink()
+          link_to(src, dst)
+          note(f"updated VSCode extension {ext['name']}: {dst}")
+          count += 1
+          continue
+      warn(f"not replacing user-owned VSCode extension entry: {dst}")
+  return count
+
+
+def uninstall_vscode_extensions() -> int:
+  count = 0
+  for ext in vscode_extensions():
+    for ext_dir in candidate_extension_dirs():
+      if not ext_dir.is_dir():
+        continue
+      dst = ext_dir / ext["name"]
+      try:
+        dst.lstat()
+      except FileNotFoundError:
+        continue
+      if dst.is_symlink() and is_configured_extension_target(resolved_symlink(dst)):
+        dst.unlink()
+        note(f"removed VSCode extension {ext['name']}: {dst}")
+        count += 1
+        continue
+      warn(f"not removing user-owned VSCode extension entry: {dst}")
+  return count
+
+
+def remove_managed_hook(dst: pathlib.Path) -> str:
+  try:
+    dst.lstat()
+  except FileNotFoundError:
+    return "absent"
+  if dst.is_symlink():
+    current = resolved_symlink(dst)
+    if current.parts[-3:] == ("tools", "git-hooks", dst.name):
+      dst.unlink()
+      return "removed"
+    warn(f"not removing user-owned hook symlink: {dst}")
+    return "skipped"
+  if MANAGED_MARKER in read_prefix(dst):
+    dst.unlink()
+    return "removed"
+  warn(f"not removing user-owned hook: {dst}")
+  return "skipped"
+
+
+def uninstall_hooks() -> int:
   hooks_dir = git_path("rev-parse", "--git-path", "hooks")
   if hooks_dir is None:
-    return
+    return 0
+  count = 0
   for name in ("pre-commit",):
-    dst = hooks_dir / name
-    state = "absent"
-    try:
-      dst.lstat()
-    except FileNotFoundError:
-      pass
-    else:
-      if dst.is_symlink() and resolved_symlink(dst).parts[-3:] == (
-          "tools", "git-hooks", name):
-        state = "managed"
+    if remove_managed_hook(hooks_dir / name) == "removed":
+      note(f"removed git hook {name}")
+      count += 1
+  return count
+
+
+def status(*, hooks: bool = True, vscode: bool = True) -> None:
+  hooks_dir = git_path("rev-parse", "--git-path", "hooks")
+  if hooks and hooks_dir is not None:
+    for name in ("pre-commit",):
+      dst = hooks_dir / name
+      state = "absent"
+      try:
+        dst.lstat()
+      except FileNotFoundError:
+        pass
       else:
-        state = "user-owned"
-    print(f"hook {name}: {state}")
+        if dst.is_symlink() and resolved_symlink(dst).parts[-3:] == (
+            "tools", "git-hooks", name):
+          state = "managed"
+        else:
+          state = "user-owned"
+      print(f"hook {name}: {state}")
+
+  if vscode:
+    extensions = vscode_extensions()
+    if not extensions:
+      print("vscode extensions: none configured")
+      return
+    for ext in extensions:
+      for ext_dir in candidate_extension_dirs():
+        if not ext_dir.is_dir():
+          continue
+        dst = ext_dir / ext["name"]
+        state = "absent"
+        try:
+          dst.lstat()
+        except FileNotFoundError:
+          pass
+        else:
+          if dst.is_symlink() and resolved_symlink(dst) == ext["path"]:
+            state = "managed"
+          else:
+            state = "user-owned"
+        print(f"vscode {dst}: {state}")
 
 
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser()
+  parser.add_argument("--hooks-only", action="store_true")
+  parser.add_argument("--vscode-only", action="store_true")
   parser.add_argument("--status", action="store_true")
-  parser.add_argument("--hooks", action="store_true", default=True)
+  parser.add_argument("--uninstall", action="store_true")
   args = parser.parse_args(argv)
-  if args.status:
-    status()
+
+  if truthy_env("REPO_NO_SETUP"):
     return 0
-  if args.hooks:
+  if args.hooks_only and args.vscode_only:
+    parser.error("--hooks-only and --vscode-only are mutually exclusive")
+
+  if args.status:
+    status(hooks=not args.vscode_only, vscode=not args.hooks_only)
+    return 0
+  if args.uninstall:
+    if not args.vscode_only:
+      uninstall_hooks()
+    if not args.hooks_only:
+      uninstall_vscode_extensions()
+    return 0
+
+  if not args.vscode_only and not truthy_env("REPO_NO_HOOKS"):
     install_hooks()
+  if not args.hooks_only and not truthy_env("REPO_NO_VSCODE"):
+    install_vscode_extensions()
   return 0
 
 
