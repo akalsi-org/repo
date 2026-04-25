@@ -12,7 +12,7 @@ Routes, when present, live in `.agents/skills/index.md`.
 Agents working in this repository must preserve the template as a reusable
 bootstrap substrate. Keep repository-specific behavior configured through
 `.agents/repo.json`, update `AGENTS.md` when commands, agent assets, hooks, or
-subsystem descriptor rules change, and run `./repo.sh agent-check --stale-only`
+subsystem descriptor rules change, and run `./repo.sh agent_check --stale-only`
 plus `git diff --check` before handing work back.
 
 Cache and mirror paths are accelerators only. A miss from `.local/`, source
@@ -37,10 +37,10 @@ interfaces stable unless deliberately migrating them with compatibility shims.
 - `repo.sh` is the environment launcher.
 - `.agents/repo.json` is the repository contract consumed by tools.
 - `.editorconfig` is the editor baseline; keep it when adapting the template.
-- `bootstrap/vars/local-cache-key.sh` invalidates reusable CI `.local/` caches.
-- `.agents/skills/`, `.agents/reviews/`, and `.agents/kb-src/` hold agent assets.
+- `bootstrap/vars/local_cache_key.sh` invalidates reusable CI `.local/` caches.
+- `.agents/skills/`, `.agents/reviews/`, and `.agents/kb_src/` hold agent assets.
 - `tools/` holds commands exposed through `repo.sh`.
-- `tools/git-hooks/pre-commit` is the managed pre-commit hook source.
+- `tools/git_hooks/pre-commit` is the managed pre-commit hook source.
   `tools/setup` can also install configured local VSCode plugins from
   `.agents/repo.json` without hard-coding any project-specific plugin.
 
@@ -49,18 +49,19 @@ interfaces stable unless deliberately migrating them with compatibility shims.
 | Command | Mode | Purpose |
 |---------|------|---------|
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
-| `agent-check` | Python | Check skill routing, docs references, and configured command inventory. |
+| `agent_check` | Python | Check skill routing, docs references, and configured command inventory. |
 | `setup` | Python | Install/status/uninstall local managed hooks and configured VSCode plugins. |
-| `source-mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
+| `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 
 ## 14. CI
 
-CI restores `.local/` with `actions/cache/restore`, runs the bootstrap and
-agent checks through `./repo.sh`, and saves `.local/` only from non-PR runs on
-cache misses. Cache keys are scoped by architecture and by
-`bootstrap/vars/local-cache-key.sh` plus `.agents/repo.json`.
+CI restores `.local/toolchain/` plus `.local/stamps/` with
+`actions/cache/restore`, runs the bootstrap and agent checks through
+`./repo.sh`, and saves those bootstrap paths only from non-PR runs on cache
+misses. Cache keys are scoped by architecture and by
+`bootstrap/vars/local_cache_key.sh` plus `.agents/repo.json`.
 
-`cache-warm.yml` periodically restores the same cache keys to reset GitHub's
+`cache_warm.yml` periodically restores the same cache keys to reset GitHub's
 LRU timer. Restore misses are acceptable and must not fail the workflow.
 
 ## 15. Subsystems

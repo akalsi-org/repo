@@ -11,7 +11,7 @@ import sys
 
 
 ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
-HOOK_SRC = ROOT / "tools" / "git-hooks"
+HOOK_SRC = ROOT / "tools" / "git_hooks"
 MANAGED_MARKER = "repo-managed-hook"
 
 
@@ -102,7 +102,7 @@ def install_managed_symlink(src: pathlib.Path, dst: pathlib.Path) -> str:
   if dst.is_symlink():
     if resolved_symlink(dst) == src.resolve(strict=False):
       return "present"
-    if resolved_symlink(dst).parts[-3:] == ("tools", "git-hooks", dst.name):
+    if resolved_symlink(dst).parts[-3:] == ("tools", "git_hooks", dst.name):
       dst.unlink()
       link_to(src, dst)
       return "updated"
@@ -214,7 +214,7 @@ def remove_managed_hook(dst: pathlib.Path) -> str:
     return "absent"
   if dst.is_symlink():
     current = resolved_symlink(dst)
-    if current.parts[-3:] == ("tools", "git-hooks", dst.name):
+    if current.parts[-3:] == ("tools", "git_hooks", dst.name):
       dst.unlink()
       return "removed"
     warn(f"not removing user-owned hook symlink: {dst}")
@@ -250,7 +250,7 @@ def status(*, hooks: bool = True, vscode: bool = True) -> None:
         pass
       else:
         if dst.is_symlink() and resolved_symlink(dst).parts[-3:] == (
-            "tools", "git-hooks", name):
+            "tools", "git_hooks", name):
           state = "managed"
         else:
           state = "user-owned"

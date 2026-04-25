@@ -1,7 +1,7 @@
 name: Cache warm
 
-# Daily touch of repo-local-* cache entries so GitHub's 7-day LRU eviction
-# does not remove reusable .local/ state when main is quiet. A cache miss is
+# Daily touch of repo_bootstrap_* cache entries so GitHub's 7-day LRU eviction
+# does not remove reusable bootstrap state when main is quiet. A cache miss is
 # not fatal; source/bootstrap paths remain canonical.
 
 on:
@@ -31,14 +31,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore .local/ (touches cache)
+      - name: Restore bootstrap cache (touches cache)
         uses: actions/cache/restore@v4
         continue-on-error: true
         with:
-          path: .local
-          key: repo-local-${{ matrix.arch }}-${{ hashFiles('bootstrap/vars/local-cache-key.sh', '.agents/repo.json') }}
+          path: |
+            .local/toolchain
+            .local/stamps
+          key: repo_bootstrap_${{ matrix.arch }}_${{ hashFiles('bootstrap/vars/local_cache_key.sh', '.agents/repo.json') }}
           restore-keys: |
-            repo-local-${{ matrix.arch }}-
+            repo_bootstrap_${{ matrix.arch }}_
 
       - name: Done
         run: echo "cache warmed for ${{ matrix.arch }}"

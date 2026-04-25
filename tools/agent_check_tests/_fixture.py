@@ -1,4 +1,4 @@
-"""Synthetic ROOT fixture used by agent-check tests.
+"""Synthetic ROOT fixture used by agent_check tests.
 
 Builds a minimal but consistent worktree (git-initialized, AGENTS.md +
 skill index + one skill file + one tool + a § 5/§ 8/§ 15 scaffold) so each

@@ -32,14 +32,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore .local/
-        id: cache-local
+      - name: Restore bootstrap cache
+        id: cache_bootstrap
         uses: actions/cache/restore@v4
         with:
-          path: .local
-          key: repo-local-${{ matrix.arch }}-${{ hashFiles('bootstrap/vars/local-cache-key.sh', '.agents/repo.json') }}
+          path: |
+            .local/toolchain
+            .local/stamps
+          key: repo_bootstrap_${{ matrix.arch }}_${{ hashFiles('bootstrap/vars/local_cache_key.sh', '.agents/repo.json') }}
           restore-keys: |
-            repo-local-${{ matrix.arch }}-
+            repo_bootstrap_${{ matrix.arch }}_
 
       - name: Bootstrap
         run: ./repo.sh true
@@ -57,12 +59,12 @@ jobs:
         run: ./repo.sh setup --status
 
       - name: Agent check
-        run: ./repo.sh agent-check --stale-only
+        run: ./repo.sh agent_check --stale-only
 
       - name: Source mirrors
-        run: ./repo.sh source-mirror list
+        run: ./repo.sh source_mirror list
 
-      - name: agent-check tests
+      - name: agent_check tests
         run: ./repo.sh python3 -m unittest discover tools/agent_check_tests
 
       - name: agent KB tests
@@ -74,26 +76,28 @@ jobs:
       - name: Pack bootstrap artifacts
         if: github.event_name != 'pull_request'
         run: |
-          ./repo.sh __repo-pack-bootstrap-artifacts /tmp/repo-bootstrap-artifacts
-          mkdir -p /tmp/repo-bootstrap-artifacts
-          touch /tmp/repo-bootstrap-artifacts/EMPTY
+          ./repo.sh __repo_pack_bootstrap_artifacts /tmp/repo_bootstrap_artifacts
+          mkdir -p /tmp/repo_bootstrap_artifacts
+          touch /tmp/repo_bootstrap_artifacts/EMPTY
 
       - name: Upload bootstrap artifacts
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: bootstrap-artifacts-${{ matrix.arch }}
-          path: /tmp/repo-bootstrap-artifacts/*
+          name: bootstrap_artifacts_${{ matrix.arch }}
+          path: /tmp/repo_bootstrap_artifacts/*
           if-no-files-found: error
 
-      - name: Save .local/
-        if: github.event_name != 'pull_request' && steps.cache-local.outputs.cache-hit != 'true'
+      - name: Save bootstrap cache
+        if: github.event_name != 'pull_request' && steps.cache_bootstrap.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: .local
-          key: ${{ steps.cache-local.outputs.cache-primary-key }}
+          path: |
+            .local/toolchain
+            .local/stamps
+          key: ${{ steps.cache_bootstrap.outputs.cache-primary-key }}
 
-  publish-bootstrap-artifacts:
+  publish_bootstrap_artifacts:
     name: publish bootstrap artifacts
     if: github.event_name != 'pull_request'
     needs: ci
@@ -104,22 +108,22 @@ jobs:
 
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO_BOOTSTRAP_ARTIFACT_TAG: bootstrap-artifacts-v1
+      REPO_BOOTSTRAP_ARTIFACT_TAG: bootstrap_artifacts_v1
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: bootstrap-artifacts-*
-          path: /tmp/repo-bootstrap-artifacts
+          pattern: bootstrap_artifacts_*
+          path: /tmp/repo_bootstrap_artifacts
           merge-multiple: true
 
       - name: Publish bootstrap artifacts
         run: |
           set -euo pipefail
           shopt -s nullglob
-          artifacts=(/tmp/repo-bootstrap-artifacts/*.tar.gz)
+          artifacts=(/tmp/repo_bootstrap_artifacts/*.tar.gz)
           if [ "${#artifacts[@]}" -eq 0 ]; then
             echo "bootstrap artifacts: none configured"
             exit 0

@@ -209,7 +209,7 @@ def _artifact_specs(root: pathlib.Path) -> list[dict[str, object]]:
 
 
 def _input_sha(root: pathlib.Path, name: str, extra: str) -> str:
-  key_path = root / "bootstrap" / "vars" / "local-cache-key.sh"
+  key_path = root / "bootstrap" / "vars" / "local_cache_key.sh"
   key_text = key_path.read_text(encoding="utf-8") if key_path.is_file() else ""
   config_text = (root / ".agents" / "repo.json").read_text(encoding="utf-8")
   return _sha256_text(

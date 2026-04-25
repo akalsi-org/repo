@@ -48,12 +48,12 @@ export REPO_TOOLCHAIN="${REPO_TOOLCHAIN:-$REPO_LOCAL/toolchain/$REPO_ARCH}"
 export REPO_SHELL=1
 export PATH="$REPO_ROOT/tools:$REPO_ROOT/tools/bin:$PATH"
 
-mkdir -p "$REPO_LOCAL"
+mkdir -p "$REPO_LOCAL/toolchain/$REPO_ARCH" "$REPO_LOCAL/stamps"
 
-if [[ "${1:-}" == "__repo-pack-bootstrap-artifacts" ]]; then
+if [[ "${1:-}" == "__repo_pack_bootstrap_artifacts" ]]; then
   shift
   [[ $# -eq 1 ]] || {
-    printf 'repo.sh: error: usage: ./repo.sh __repo-pack-bootstrap-artifacts OUT_DIR\n' >&2
+    printf 'repo.sh: error: usage: ./repo.sh __repo_pack_bootstrap_artifacts OUT_DIR\n' >&2
     exit 1
   }
   exec python3 "$REPO_ROOT/tools/bootstrap_artifact_release.py" pack \

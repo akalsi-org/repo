@@ -51,7 +51,7 @@ class AgentKbTest(unittest.TestCase):
 
   def test_stale_reports_invalid_ref(self) -> None:
     write(
-      self.root / ".agents/kb-src/bad.jsonl",
+      self.root / ".agents/kb_src/bad.jsonl",
       """
       {"id":"bad-ref","says":["oops"],"refs":["missing.md"]}
       """,

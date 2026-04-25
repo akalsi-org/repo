@@ -1,6 +1,6 @@
-"""agent-check core.
+"""agent_check core.
 
-Importable module that drives `tools/agent-check`. Splitting the body
+Importable module that drives `tools/agent_check`. Splitting the body
 out lets `tools/agent_check_tests/` exercise individual checks against
 synthetic ROOT trees instead of the live worktree.
 
@@ -364,7 +364,7 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
 def build_report(root: pathlib.Path) -> Report:
   paths = changed_paths(root)
   skills, notes, checks = route_advice(root, paths)
-  closeout = sorted(checks | {"git diff --check", "./repo.sh agent-check"})
+  closeout = sorted(checks | {"git diff --check", "./repo.sh agent_check"})
   return Report(
     paths=paths,
     skills=sorted(skills),
@@ -385,7 +385,7 @@ def _render_list(title: str, values: list[str]) -> str:
 
 def render_report(root: pathlib.Path, report: Report) -> str:
   parts = [
-    "agent-check",
+    "agent_check",
     f"root: {root}",
     "",
     _render_list("changed paths:", report.paths),
@@ -402,7 +402,7 @@ def render_report(root: pathlib.Path, report: Report) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-  parser = argparse.ArgumentParser(prog="agent-check")
+  parser = argparse.ArgumentParser(prog="agent_check")
   parser.add_argument(
     "--stale-only",
     action="store_true",

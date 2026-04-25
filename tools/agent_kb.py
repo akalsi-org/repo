@@ -4,7 +4,7 @@
 JSONL shards, then answers agent requests through named queries and runtime
 table actions.
 
-Editable repo-state inputs live in `.agents/kb-src/**/*.jsonl`. Ignored runtime
+Editable repo-state inputs live in `.agents/kb_src/**/*.jsonl`. Ignored runtime
 cache lives under `build/agent-kb/` as:
 
 - `manifest.json` — source hashes + shard summaries.
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 
 from tools.agent_check import glob_match
 
-KB_SRC_REL = ".agents/kb-src"
+KB_SRC_REL = ".agents/kb_src"
 KB_TABLES_REL = f"{KB_SRC_REL}/tables"
 KB_BUILD_REL = "build/agent-kb"
 MANIFEST_REL = f"{KB_BUILD_REL}/manifest.json"

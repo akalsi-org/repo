@@ -62,20 +62,20 @@ class TempRepo:
     )
     (self.root / "tools/sample-tool").chmod(0o755)
     write(
-      self.root / ".agents/kb-src/base.jsonl",
+      self.root / ".agents/kb_src/base.jsonl",
       """
       {"id":"build-fact","paths":["tools/sample-*"],"verbs":["change"],"skills":["build-commands"],"says":["Command changes use build-commands flow."],"refs":["AGENTS.md"],"checks":["./repo.sh lint"]}
       {"id":"src-fact","paths":["src/**"],"verbs":["change"],"says":["Read nested subsystem AGENTS."],"refs":["src/example/AGENTS.md"]}
       """,
     )
     write(
-      self.root / ".agents/kb-src/tables/backlog.jsonl",
+      self.root / ".agents/kb_src/tables/backlog.jsonl",
       """
       {"id":"bp1","area":"runtime-perf","priority":"P1","title":"Hot path heap alloc","path":"tools/sample-tool","paths":["tools/sample-*"],"suggested_fix":"stack buffer","detail":"heap alloc in hot path"}
       """,
     )
     write(
-      self.root / ".agents/kb-src/tables/tool_catalog.jsonl",
+      self.root / ".agents/kb_src/tables/tool_catalog.jsonl",
       """
       {"id":"source-scan","name":"source scan","commands":["rg pattern src/"],"strengths":["fast discovery"]}
       {"id":"test","name":"test","commands":["./repo.sh test debug"],"strengths":["regression checks"]}
@@ -84,7 +84,7 @@ class TempRepo:
       """,
     )
     write(
-      self.root / ".agents/kb-src/tables/tool_playbooks.jsonl",
+      self.root / ".agents/kb_src/tables/tool_playbooks.jsonl",
       """
       {"id":"pb-runtime","areas":["runtime-perf"],"priorities":["P1"],"paths":["tools/sample-*"],"tool_ids":["bench","source-scan","test"],"why":"runtime perf wants search + tests"}
       """,
