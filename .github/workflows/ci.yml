@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore .local/
+        id: cache-local
+        uses: actions/cache/restore@v4
+        with:
+          path: .local
+          key: repo-local-${{ matrix.arch }}-${{ hashFiles('bootstrap/vars/local-cache-key.sh', '.agents/repo.json') }}
+          restore-keys: |
+            repo-local-${{ matrix.arch }}-
+
+      - name: Bootstrap
+        run: ./repo.sh true
+
+      - name: Environment smoke
+        run: |
+          ./repo.sh bash -eux -c '
+            test "$REPO_ARCH" = "${{ matrix.arch }}"
+            test -n "$REPO_ROOT"
+            test -n "$REPO_LOCAL"
+            test -n "$REPO_TOOLCHAIN"
+          '
+
+      - name: Setup status
+        run: ./repo.sh setup --status
+
+      - name: Agent check
+        run: ./repo.sh agent-check --stale-only
+
+      - name: Source mirrors
+        run: ./repo.sh source-mirror list
+
+      - name: agent-check tests
+        run: ./repo.sh python3 -m unittest discover tools/agent_check_tests
+
+      - name: agent KB tests
+        run: ./repo.sh python3 -m unittest discover tools/agent_kb_tests
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: Pack bootstrap artifacts
+        if: github.event_name != 'pull_request'
+        run: |
+          ./repo.sh __repo-pack-bootstrap-artifacts /tmp/repo-bootstrap-artifacts
+          mkdir -p /tmp/repo-bootstrap-artifacts
+          touch /tmp/repo-bootstrap-artifacts/EMPTY
+
+      - name: Upload bootstrap artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-artifacts-${{ matrix.arch }}
+          path: /tmp/repo-bootstrap-artifacts/*
+          if-no-files-found: error
+
+      - name: Save .local/
+        if: github.event_name != 'pull_request' && steps.cache-local.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .local
+          key: ${{ steps.cache-local.outputs.cache-primary-key }}
+
+  publish-bootstrap-artifacts:
+    name: publish bootstrap artifacts
+    if: github.event_name != 'pull_request'
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO_BOOTSTRAP_ARTIFACT_TAG: bootstrap-artifacts-v1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bootstrap-artifacts-*
+          path: /tmp/repo-bootstrap-artifacts
+          merge-multiple: true
+
+      - name: Publish bootstrap artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(/tmp/repo-bootstrap-artifacts/*.tar.gz)
+          if [ "${#artifacts[@]}" -eq 0 ]; then
+            echo "bootstrap artifacts: none configured"
+            exit 0
+          fi
+          python3 tools/bootstrap_artifact_release.py publish \
+            --repo "${{ github.repository }}" \
+            --tag "$REPO_BOOTSTRAP_ARTIFACT_TAG" \
+            "${artifacts[@]}"

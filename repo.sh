@@ -50,6 +50,17 @@ export PATH="$REPO_ROOT/tools:$REPO_ROOT/tools/bin:$PATH"
 
 mkdir -p "$REPO_LOCAL"
 
+if [[ "${1:-}" == "__repo-pack-bootstrap-artifacts" ]]; then
+  shift
+  [[ $# -eq 1 ]] || {
+    printf 'repo.sh: error: usage: ./repo.sh __repo-pack-bootstrap-artifacts OUT_DIR\n' >&2
+    exit 1
+  }
+  exec python3 "$REPO_ROOT/tools/bootstrap_artifact_release.py" pack \
+    --root "$REPO_ROOT" \
+    --out-dir "$1"
+fi
+
 if [[ $# -gt 0 ]]; then
   exec "$@"
 fi

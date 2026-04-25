@@ -1,0 +1,44 @@
+name: Cache warm
+
+# Daily touch of repo-local-* cache entries so GitHub's 7-day LRU eviction
+# does not remove reusable .local/ state when main is quiet. A cache miss is
+# not fatal; source/bootstrap paths remain canonical.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  warm:
+    name: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore .local/ (touches cache)
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: .local
+          key: repo-local-${{ matrix.arch }}-${{ hashFiles('bootstrap/vars/local-cache-key.sh', '.agents/repo.json') }}
+          restore-keys: |
+            repo-local-${{ matrix.arch }}-
+
+      - name: Done
+        run: echo "cache warmed for ${{ matrix.arch }}"

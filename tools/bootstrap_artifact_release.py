@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Publish bootstrap artifacts to a GitHub Release using only stdlib."""
+"""Pack and publish bootstrap artifacts using only stdlib."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
 import mimetypes
 import os
 import pathlib
+import tarfile
 import sys
 import urllib.error
 import urllib.parse
@@ -15,6 +18,7 @@ import urllib.request
 
 
 API = "https://api.github.com"
+ARTIFACT_FORMAT = "1"
 
 
 def resolve_token() -> str | None:
@@ -160,12 +164,130 @@ def _upload(release: dict[str, object], path: pathlib.Path, token: str) -> None:
   upload_asset(release, path, token)
 
 
+def _sha256_text(text: str) -> str:
+  return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _load_repo_config(root: pathlib.Path) -> dict[str, object]:
+  path = root / ".agents" / "repo.json"
+  if not path.is_file():
+    return {}
+  raw = json.loads(path.read_text(encoding="utf-8"))
+  if not isinstance(raw, dict):
+    raise SystemExit(".agents/repo.json must contain a JSON object")
+  return raw
+
+
+def _artifact_specs(root: pathlib.Path) -> list[dict[str, object]]:
+  raw = _load_repo_config(root).get("bootstrap_artifacts", [])
+  if raw is None:
+    return []
+  if not isinstance(raw, list):
+    raise SystemExit("bootstrap_artifacts must be a list")
+  specs: list[dict[str, object]] = []
+  for item in raw:
+    if not isinstance(item, dict):
+      raise SystemExit("bootstrap_artifacts entries must be objects")
+    name = item.get("name")
+    path = item.get("path")
+    witnesses = item.get("witnesses", [])
+    extra = item.get("extra", "")
+    if not isinstance(name, str) or not isinstance(path, str):
+      raise SystemExit("bootstrap_artifacts entries need name and path")
+    if not isinstance(witnesses, list) or not all(
+        isinstance(v, str) for v in witnesses):
+      raise SystemExit("bootstrap_artifacts witnesses must be list[str]")
+    if not isinstance(extra, str):
+      raise SystemExit("bootstrap_artifacts extra must be a string")
+    specs.append({
+        "name": name,
+        "path": path,
+        "witnesses": witnesses,
+        "extra": extra,
+    })
+  return specs
+
+
+def _input_sha(root: pathlib.Path, name: str, extra: str) -> str:
+  key_path = root / "bootstrap" / "vars" / "local-cache-key.sh"
+  key_text = key_path.read_text(encoding="utf-8") if key_path.is_file() else ""
+  config_text = (root / ".agents" / "repo.json").read_text(encoding="utf-8")
+  return _sha256_text(
+      f"format={ARTIFACT_FORMAT}\n"
+      f"name={name}\n"
+      f"cache_key={hashlib.sha256(key_text.encode()).hexdigest()}\n"
+      f"repo_config={hashlib.sha256(config_text.encode()).hexdigest()}\n"
+      f"extra={extra}\n"
+  )
+
+
+def _pack_one(root: pathlib.Path, out_dir: pathlib.Path,
+              spec: dict[str, object]) -> pathlib.Path | None:
+  name = str(spec["name"])
+  src = (root / str(spec["path"])).resolve()
+  if not src.exists():
+    print(f"bootstrap artifact skipped: {name} source missing: {src}",
+          file=sys.stderr)
+    return None
+  for witness in spec["witnesses"]:
+    if not (src / str(witness)).exists():
+      raise SystemExit(f"cannot pack {name}: missing witness {witness}")
+  digest = _input_sha(root, name, str(spec["extra"]))
+  out_dir.mkdir(parents=True, exist_ok=True)
+  archive = out_dir / f"repo-{name}-{digest}.tar.gz"
+  manifest = json.dumps(
+      {
+          "format": ARTIFACT_FORMAT,
+          "name": name,
+          "input_sha": digest,
+          "source": str(spec["path"]),
+          "witnesses": spec["witnesses"],
+      },
+      sort_keys=True,
+  ).encode("utf-8")
+  with tarfile.open(archive, "w:gz") as tf:
+    info = tarfile.TarInfo("manifest.json")
+    info.size = len(manifest)
+    tf.addfile(info, io.BytesIO(manifest))
+    tf.add(src, arcname="payload")
+  print(archive)
+  return archive
+
+
+def pack_configured_artifacts(root: pathlib.Path, out_dir: pathlib.Path) -> int:
+  count = 0
+  for spec in _artifact_specs(root):
+    if _pack_one(root, out_dir, spec) is not None:
+      count += 1
+  if count == 0:
+    print("bootstrap artifacts: none configured", file=sys.stderr)
+  return 0
+
+
 def main(argv: list[str] | None = None) -> int:
   p = argparse.ArgumentParser()
-  p.add_argument("--repo", required=True, help="owner/name")
-  p.add_argument("--tag", required=True)
-  p.add_argument("artifacts", nargs="+", type=pathlib.Path)
+  sub = p.add_subparsers(dest="cmd")
+
+  pack = sub.add_parser("pack")
+  pack.add_argument("--root", type=pathlib.Path,
+                    default=pathlib.Path(os.environ.get("REPO_ROOT", ".")))
+  pack.add_argument("--out-dir", required=True, type=pathlib.Path)
+
+  publish = sub.add_parser("publish")
+  publish.add_argument("--repo", required=True, help="owner/name")
+  publish.add_argument("--tag", required=True)
+  publish.add_argument("artifacts", nargs="+", type=pathlib.Path)
+
   args = p.parse_args(argv)
+  if args.cmd == "pack":
+    return pack_configured_artifacts(args.root.resolve(), args.out_dir)
+  if args.cmd is None:
+    # Backward-compatible publish mode for callers that predate subcommands.
+    legacy = argparse.ArgumentParser()
+    legacy.add_argument("--repo", required=True, help="owner/name")
+    legacy.add_argument("--tag", required=True)
+    legacy.add_argument("artifacts", nargs="+", type=pathlib.Path)
+    args = legacy.parse_args(argv)
 
   token = resolve_token()
   if not token:
