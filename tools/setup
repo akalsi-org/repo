@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import stat
+import subprocess
+import sys
+
+
+ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
+HOOK_SRC = ROOT / "tools" / "git-hooks"
+MANAGED_MARKER = "repo-managed-hook"
+
+
+def warn(msg: str) -> None:
+  print(f"setup: warning: {msg}", file=sys.stderr)
+
+
+def note(msg: str) -> None:
+  print(f"setup: {msg}", file=sys.stderr)
+
+
+def git_path(*args: str) -> pathlib.Path | None:
+  proc = subprocess.run(
+      ["git", "-C", str(ROOT), *args],
+      check=False,
+      text=True,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+  )
+  if proc.returncode != 0:
+    warn(f"git {' '.join(args)} failed; skipping git-hook setup")
+    return None
+  out = proc.stdout.strip()
+  if not out:
+    return None
+  path = pathlib.Path(out)
+  return path if path.is_absolute() else (ROOT / path).resolve()
+
+
+def read_prefix(path: pathlib.Path, n: int = 512) -> str:
+  try:
+    return path.read_text(encoding="utf-8", errors="replace")[:n]
+  except OSError:
+    return ""
+
+
+def resolved_symlink(path: pathlib.Path) -> pathlib.Path:
+  target = pathlib.Path(os.readlink(path))
+  if not target.is_absolute():
+    target = path.parent / target
+  return target.resolve(strict=False)
+
+
+def link_to(src: pathlib.Path, dst: pathlib.Path) -> None:
+  dst.parent.mkdir(parents=True, exist_ok=True)
+  dst.symlink_to(os.path.relpath(src, dst.parent))
+
+
+def install_managed_symlink(src: pathlib.Path, dst: pathlib.Path) -> str:
+  try:
+    st = dst.lstat()
+  except FileNotFoundError:
+    link_to(src, dst)
+    return "installed"
+  if dst.is_symlink():
+    if resolved_symlink(dst) == src.resolve(strict=False):
+      return "present"
+    if resolved_symlink(dst).parts[-3:] == ("tools", "git-hooks", dst.name):
+      dst.unlink()
+      link_to(src, dst)
+      return "updated"
+    warn(f"not replacing user-owned symlink: {dst}")
+    return "skipped"
+  if not stat.S_ISREG(st.st_mode):
+    warn(f"not replacing non-file hook: {dst}")
+    return "skipped"
+  if MANAGED_MARKER in read_prefix(dst):
+    dst.unlink()
+    link_to(src, dst)
+    return "updated"
+  warn(f"not replacing user-owned hook: {dst}")
+  return "skipped"
+
+
+def install_hooks() -> int:
+  hooks_dir = git_path("rev-parse", "--git-path", "hooks")
+  if hooks_dir is None:
+    return 0
+  count = 0
+  for name in ("pre-commit",):
+    src = HOOK_SRC / name
+    if not src.exists():
+      warn(f"managed hook source missing: {src}")
+      continue
+    result = install_managed_symlink(src, hooks_dir / name)
+    if result in {"installed", "updated"}:
+      note(f"{result} git hook {name}")
+      count += 1
+  return count
+
+
+def status() -> None:
+  hooks_dir = git_path("rev-parse", "--git-path", "hooks")
+  if hooks_dir is None:
+    return
+  for name in ("pre-commit",):
+    dst = hooks_dir / name
+    state = "absent"
+    try:
+      dst.lstat()
+    except FileNotFoundError:
+      pass
+    else:
+      if dst.is_symlink() and resolved_symlink(dst).parts[-3:] == (
+          "tools", "git-hooks", name):
+        state = "managed"
+      else:
+        state = "user-owned"
+    print(f"hook {name}: {state}")
+
+
+def main(argv: list[str] | None = None) -> int:
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--status", action="store_true")
+  parser.add_argument("--hooks", action="store_true", default=True)
+  args = parser.parse_args(argv)
+  if args.status:
+    status()
+    return 0
+  if args.hooks:
+    install_hooks()
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

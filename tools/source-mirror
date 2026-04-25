@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+
+ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
+
+if str(ROOT) not in sys.path:
+  sys.path.insert(0, str(ROOT))
+
+from tools.bootstrap_artifact_release import (  # noqa: E402
+    asset_names,
+    ensure_release,
+    resolve_token,
+    upload_asset,
+)
+
+
+DEFAULT_TAG = "source-mirrors-v1"
+
+
+def repo_config() -> dict[str, object]:
+  path = ROOT / ".agents" / "repo.json"
+  if not path.is_file():
+    return {}
+  raw = json.loads(path.read_text(encoding="utf-8"))
+  if not isinstance(raw, dict):
+    raise SystemExit(".agents/repo.json must contain a JSON object")
+  return raw
+
+
+def configured_repo(args: argparse.Namespace) -> str | None:
+  value = args.repo if args.repo is not None else repo_config().get("source_mirror_repo")
+  if value is None:
+    return None
+  if not isinstance(value, str):
+    raise SystemExit("source_mirror_repo must be null or a string")
+  return value
+
+
+def mirror_specs() -> list[dict[str, str]]:
+  specs = repo_config().get("source_mirrors", [])
+  if specs is None:
+    return []
+  if not isinstance(specs, list):
+    raise SystemExit("source_mirrors must be a list")
+  out: list[dict[str, str]] = []
+  for spec in specs:
+    if not isinstance(spec, dict):
+      raise SystemExit("source_mirrors entries must be objects")
+    name = spec.get("name")
+    path = spec.get("path")
+    asset = spec.get("asset", pathlib.Path(str(path)).name if path else None)
+    sha256 = spec.get("sha256")
+    if not all(isinstance(v, str) for v in (name, path, asset, sha256)):
+      raise SystemExit("source_mirrors entries need name, path, asset, sha256")
+    out.append({"name": name, "path": path, "asset": asset, "sha256": sha256})
+  return out
+
+
+def sha256(path: pathlib.Path) -> str:
+  h = hashlib.sha256()
+  with path.open("rb") as f:
+    for chunk in iter(lambda: f.read(1 << 20), b""):
+      h.update(chunk)
+  return h.hexdigest()
+
+
+def select_specs(names: list[str]) -> list[dict[str, str]]:
+  specs = mirror_specs()
+  if not names:
+    return specs
+  by_name = {spec["name"]: spec for spec in specs}
+  unknown = [name for name in names if name not in by_name]
+  if unknown:
+    raise SystemExit(f"unknown mirror(s): {' '.join(unknown)}")
+  return [by_name[name] for name in names]
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+  repo = configured_repo(args)
+  print(f"repo:       {repo or '(disabled)'}")
+  print(f"tag:        {args.tag}")
+  specs = select_specs(args.names)
+  if not specs:
+    print("mirrors:    none")
+    return 0
+  for spec in specs:
+    path = (ROOT / spec["path"]).resolve()
+    present = "yes" if path.is_file() else "no"
+    print(f"  {spec['name']:<16} asset={spec['asset']} src={path} present={present}")
+    if path.is_file():
+      have = sha256(path)
+      ok = "match" if have == spec["sha256"] else "MISMATCH"
+      print(f"                  sha256={have} ({ok})")
+  return 0
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+  repo = configured_repo(args)
+  if not repo:
+    raise SystemExit("source mirror repo is disabled; set source_mirror_repo")
+  token = resolve_token()
+  if not token:
+    raise SystemExit("GITHUB_TOKEN or GH_TOKEN is required")
+  resolved = []
+  for spec in select_specs(args.names):
+    path = (ROOT / spec["path"]).resolve()
+    if not path.is_file():
+      raise SystemExit(f"missing source file: {path}")
+    have = sha256(path)
+    if have != spec["sha256"]:
+      raise SystemExit(f"sha256 mismatch for {path}: have {have}, pinned {spec['sha256']}")
+    resolved.append((path, spec["asset"]))
+  release = ensure_release(repo, args.tag, token,
+                           name="repo source mirrors v1",
+                           body="Byte-identical upstream source fallback copies.")
+  existing = asset_names(release)
+  for path, asset in resolved:
+    if asset in existing:
+      print(f"source mirror exists: {asset}", file=sys.stderr)
+      continue
+    upload_asset(release, path, token, asset_name=asset, noun="source mirror")
+  return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--repo", default=None, help="owner/name override")
+  parser.add_argument("--tag", default=DEFAULT_TAG)
+  sub = parser.add_subparsers(dest="cmd", required=True)
+  list_parser = sub.add_parser("list")
+  list_parser.add_argument("names", nargs="*")
+  list_parser.set_defaults(func=cmd_list)
+  upload_parser = sub.add_parser("upload")
+  upload_parser.add_argument("names", nargs="*")
+  upload_parser.set_defaults(func=cmd_upload)
+  args = parser.parse_args(argv)
+  return args.func(args)
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

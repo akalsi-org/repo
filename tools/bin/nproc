@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Print available CPU count.
+
+Portable repo-local replacement for host `nproc`. Keep stdlib-only so
+canonical shell commands can use it through `./repo.sh` PATH.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+
+def main() -> int:
+  n = os.cpu_count() or 1
+  if n < 1:
+    n = 1
+  print(n)
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main())

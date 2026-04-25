@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# repo-managed-hook
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+exec "$root/repo.sh" agent-check --stale-only
