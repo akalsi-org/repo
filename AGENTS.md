@@ -29,8 +29,8 @@ the stage that broke and wrappers do not rebuild the same output repeatedly.
 
 Prefer `_` over `-` for new names: files, directories, config keys, Python
 modules, generated identifiers, cache keys, and internal command names. CLI
-arguments remain conventional `-` / `--` flags. Keep existing hyphenated public
-interfaces stable unless deliberately migrating them with compatibility shims.
+arguments remain conventional `-` / `--` flags. Do not add hyphenated command
+aliases in this template.
 
 ## 5. Repo Layout
 
