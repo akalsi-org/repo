@@ -27,30 +27,63 @@ Procedures live in `.agents/skills/<name>/SKILL.md`. Routing by path
 pattern lives in `.agents/skills/index.md`. Skill folder names use
 hyphens; everything else uses underscores (see §6 Naming).
 
+All skills organized by lifecycle tier (see ADR-0011). Core tier is
+always available; phase-specific tiers activate when repo enters those
+phases. Template-admin tier is operator-only, infrequent.
+
+### Tier 1: Core (every session)
+
 | Skill | Engage when | Definition |
 |-------|-------------|------------|
 | `caveman` | Always active by default; user toggles off explicitly. | `.agents/skills/caveman/SKILL.md` |
-| `doc-sync` | Changing AGENTS.md, README, CONTEXT.md, docs/adr/, .agents/skills/index.md, .agents/kb_src/, layout, command docs. | `.agents/skills/doc-sync/SKILL.md` |
 | `git-style` | Any git operation on behalf of the user — commits, branches, remotes, worktrees. | `.agents/skills/git-style/SKILL.md` |
-| `knowledge-management` | Adding, querying, pruning entries in `.agents/kb_src/`. | `.agents/skills/knowledge-management/SKILL.md` |
-| `tdd` | Building features or fixing bugs with tests-first; mention of "red-green-refactor". | `.agents/skills/tdd/SKILL.md` |
-| `simplify` | After a feature lands, before a PR, or "tighten / clean up / simplify". | `.agents/skills/simplify/SKILL.md` |
-| `design-an-interface` | Designing a new module API or comparing module shapes ("design it twice"). | `.agents/skills/design-an-interface/SKILL.md` |
-| `domain-model` | Stress-testing a plan against `CONTEXT.md` and existing ADRs. | `.agents/skills/domain-model/SKILL.md` |
-| `improve-codebase-architecture` | Finding deepening opportunities, consolidating shallow modules. | `.agents/skills/improve-codebase-architecture/SKILL.md` |
 | `decision-record` | A hard-to-reverse, surprising, trade-off-driven call has been made. | `.agents/skills/decision-record/SKILL.md` |
-| `debate-and-decide` | A load-bearing decision has two defensible sides and no existing ADR resolves it. | `.agents/skills/debate-and-decide/SKILL.md` |
-| `grill-me` | Stress-testing a plan via relentless interview. | `.agents/skills/grill-me/SKILL.md` |
-| `ideate` | Generating a horizon-spanning idea portfolio (short / medium / long / visionary) with 1st-/2nd-/3rd-order effect classification. | `.agents/skills/ideate/SKILL.md` |
 | `c-suite` | Running a virtual executive board meeting to balance ideas, backlog, vision, cost, Facets, and priorities; CEO decides. | `.agents/skills/c-suite/SKILL.md` |
+| `tdd` | Building features or fixing bugs with tests-first; mention of "red-green-refactor". | `.agents/skills/tdd/SKILL.md` |
+| `knowledge-management` | Adding, querying, pruning entries in `.agents/kb_src/`. | `.agents/skills/knowledge-management/SKILL.md` |
+
+### Tier 2: Phase-Specific (activate per lifecycle phase)
+
+**Design / Decision phase:**
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
+| `ideate` | Generating a horizon-spanning idea portfolio (short / medium / long / visionary) with 1st-/2nd-/3rd-order effect classification. | `.agents/skills/ideate/SKILL.md` |
+| `grill-me` | Stress-testing a plan via relentless interview. | `.agents/skills/grill-me/SKILL.md` |
+| `design-an-interface` | Designing a new module API or comparing module shapes ("design it twice"). | `.agents/skills/design-an-interface/SKILL.md` |
+| `improve-codebase-architecture` | Finding deepening opportunities, consolidating shallow modules. | `.agents/skills/improve-codebase-architecture/SKILL.md` |
+| `domain-model` | Stress-testing a plan against `CONTEXT.md` and existing ADRs. | `.agents/skills/domain-model/SKILL.md` |
 | `debate-and-decide` | A load-bearing question is genuinely contested, no ADR resolves it, and at least two defensible positions exist. Two sub-agents argue; parent escalates only preference-shaped cruxes to the user. | `.agents/skills/debate-and-decide/SKILL.md` |
-| `triage-issue` | A bug needs investigation + a TDD fix plan filed as an issue. | `.agents/skills/triage-issue/SKILL.md` |
-| `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
-| `request-refactor-plan` | Detailed refactor plan + tiny commits filed as a GitHub issue. | `.agents/skills/request-refactor-plan/SKILL.md` |
+
+**Bootstrap phase:**
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
 | `bootstrap-toolchain` | Adding/upgrading/removing pinned tools, editing fetcher helpers. | `.agents/skills/bootstrap-toolchain/SKILL.md` |
 | `cache-hygiene` | Changing CI cache config, fetch helpers, per-tool prune rules, source-mirror or bootstrap-artifact behavior. | `.agents/skills/cache-hygiene/SKILL.md` |
 | `bootstrap-product` | Forking the template into a new named product. | `.agents/skills/bootstrap-product/SKILL.md` |
 | `initialize` | User just cloned; helping run or extend `tools/initialize`. | `.agents/skills/initialize/SKILL.md` |
+
+**Debug / Refactor phase:**
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
+| `triage-issue` | A bug needs investigation + a TDD fix plan filed as an issue. | `.agents/skills/triage-issue/SKILL.md` |
+| `request-refactor-plan` | Detailed refactor plan + tiny commits filed as a GitHub issue. | `.agents/skills/request-refactor-plan/SKILL.md` |
+| `simplify` | After a feature lands, before a PR, or "tighten / clean up / simplify". | `.agents/skills/simplify/SKILL.md` |
+
+**Landing phase:**
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
+| `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
+| `doc-sync` | Changing AGENTS.md, README, CONTEXT.md, docs/adr/, .agents/skills/index.md, .agents/kb_src/, layout, command docs. | `.agents/skills/doc-sync/SKILL.md` |
+
+### Tier 3: Template-Admin (operator-only, infrequent)
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
+| `customize-cloud-agent` | Customizing Copilot cloud agent environment, including copilot-setup-steps.yml configuration, preinstalling tools and dependencies, runners, and settings. | Builtin |
 
 ## 3. Maintenance contract
 
@@ -69,6 +102,14 @@ reusable bootstrap substrate.
   integrations, or descriptor rules change.
 - Run `./repo.sh agent_check --stale-only` and `git diff --check`
   before handing work back.
+- **Skill gate maintenance (ADR-0011):** Each skill's gate condition
+  must reference current `CONTEXT.md` terms + `docs/adr/` decisions.
+  Gates older than 180 days trigger stale flags in `agent_check`. Quarterly
+  audit synchronizes gates with live documentation. Tier 1 (Core) skills
+  require active use every session; Tier 2 (Phase-Specific) activate when
+  repo enters that lifecycle phase; Tier 3 (Template-Admin) are operator-
+  only and infrequent. Do not prune tier 2 skills to reduce template
+  complexity — products fork, inherit all skills, and activate selectively.
 
 Cache and mirror paths are accelerators only. A miss from `.local/`,
 the source mirror, or a bootstrap artifact must not be fatal during

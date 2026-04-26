@@ -12,3 +12,4 @@
 | 0008 | [Pinned binary Python for repo machinery](0008_pinned_binary_python.md) |
 | 0009 | [Cluster-first system tests](0009_cluster_first_system_tests.md) |
 | 0010 | [Declared bootstrap tool dependencies](0010_declared_bootstrap_tool_dependencies.md) |
+| 0011 | [Skills portfolio lifecycle tiers](0011_skills_portfolio_lifecycle_tiers.md) |
