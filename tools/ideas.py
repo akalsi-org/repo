@@ -9,7 +9,7 @@ import json
 import os
 import pathlib
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import combinations
 from typing import Mapping
 
@@ -34,6 +34,13 @@ DACI_LIST_FIELDS = ("contributors", "informed")
 ACTIVE_STATES = {"seed", "shaped", "decided", "queued", "active"}
 READY_STATE_PRIORITY = {"queued": 2, "decided": 1, "shaped": 0}
 OUTCOME_REVIEW_FIELDS = ("expected", "actual", "follow_up", "reviewed_at")
+CADENCE_INTERVALS = {
+  "daily": timedelta(days=1),
+  "weekly": timedelta(days=7),
+  "monthly": timedelta(days=30),
+  "quarterly": timedelta(days=90),
+  "yearly": timedelta(days=365),
+}
 
 
 def utc_now() -> str:
@@ -213,6 +220,8 @@ def cost_risk_rows(
 def target_summary_rows(
     rows: list[dict[str, object]],
     ledger: TargetLedger,
+    *,
+    now: datetime,
 ) -> list[str]:
   lines: list[str] = []
   for target in ledger.ordered:
@@ -220,11 +229,102 @@ def target_summary_rows(
     active = sum(1 for row in assigned if row.get("state") in ACTIVE_STATES)
     done = sum(1 for row in assigned if row.get("state") == "done")
     blocked = sum(1 for row in assigned if row.get("decision_required") is True)
+    lifecycle = target_lifecycle(target, assigned)
+    review_timing = target_review_timing(target, assigned, now=now)
     lines.append(
       f"{target.id} owner={target.owner} status={target.status} "
-      f"active={active} done={done} blocked={blocked}"
+      f"active={active} done={done} blocked={blocked} "
+      f"lifecycle={lifecycle['state']} "
+      f"archive_candidate={lifecycle['archive_candidate']} "
+      f"review={review_timing['state']} "
+      f"last_reviewed={review_timing['last_reviewed']} "
+      f"next_review_due={review_timing['next_review_due']}"
     )
   return lines
+
+
+def _reviewed_at(row: dict[str, object]) -> datetime | None:
+  outcome_review = row.get("outcome_review")
+  if not isinstance(outcome_review, dict):
+    return None
+  reviewed_at = outcome_review.get("reviewed_at")
+  if not isinstance(reviewed_at, str) or not reviewed_at:
+    return None
+  try:
+    return datetime.fromisoformat(reviewed_at)
+  except ValueError:
+    return None
+
+
+def _cadence_interval(cadence: str | None) -> timedelta | None:
+  if cadence is None:
+    return None
+  return CADENCE_INTERVALS.get(cadence)
+
+
+def target_review_timing(
+    target: object,
+    rows: list[dict[str, object]],
+    *,
+    now: datetime,
+) -> dict[str, str]:
+  cadence = getattr(target, "review_cadence", None)
+  interval = _cadence_interval(cadence)
+  reviewed = sorted(
+    (seen for row in rows if (seen := _reviewed_at(row)) is not None),
+  )
+  last_reviewed = reviewed[-1] if reviewed else None
+  if cadence is None:
+    return {
+      "state": "untracked",
+      "last_reviewed": last_reviewed.isoformat() if last_reviewed else "never",
+      "next_review_due": "n/a",
+    }
+  if interval is None:
+    return {
+      "state": "invalid_cadence",
+      "last_reviewed": last_reviewed.isoformat() if last_reviewed else "never",
+      "next_review_due": "unknown",
+    }
+  if last_reviewed is None:
+    return {
+      "state": "review_missing",
+      "last_reviewed": "never",
+      "next_review_due": "now",
+    }
+  next_due = last_reviewed + interval
+  state = "overdue" if next_due <= now else "current"
+  return {
+    "state": state,
+    "last_reviewed": last_reviewed.isoformat(),
+    "next_review_due": next_due.isoformat(),
+  }
+
+
+def target_lifecycle(
+    target: object,
+    rows: list[dict[str, object]],
+) -> dict[str, str]:
+  has_active = any(row.get("state") in ACTIVE_STATES for row in rows)
+  has_reviewed_done = any(
+    row.get("state") == "done" and isinstance(row.get("outcome_review"), dict)
+    for row in rows
+  )
+  if has_active:
+    state = "active_work"
+  elif has_reviewed_done:
+    state = "proved_idle"
+  else:
+    state = "idle"
+  archive_candidate = (
+    "yes"
+    if state == "proved_idle" and getattr(target, "status", None) == "active"
+    else "no"
+  )
+  return {
+    "state": state,
+    "archive_candidate": archive_candidate,
+  }
 
 
 def unused_active_targets(
@@ -616,7 +716,7 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
       stale.append(row)
   blocked = blocked_decision_rows(rows)
   unreviewed = unreviewed_done_rows(rows)
-  target_lines = target_summary_rows(rows, ledger)
+  target_lines = target_summary_rows(rows, ledger, now=now)
   unused_targets = unused_active_targets(rows, ledger)
   print(f"ideas: {len(rows)}")
   print(f"validation_issues: {len(issues)}")

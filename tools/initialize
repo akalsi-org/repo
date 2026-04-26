@@ -123,6 +123,8 @@ def render_readme(knobs: dict) -> None:
 
 ```sh
 ./repo.sh initialize     # one-time setup; idempotent
+./repo.sh ideas ready    # inspect the seeded ready bet
+./repo.sh ideas report --cost
 ./repo.sh                # open a shell with REPO_* env vars set
 ./repo.sh agent_check --stale-only
 ```
@@ -133,7 +135,7 @@ Every command goes through `./repo.sh <verb> [args]`:
 
 | Verb | Purpose |
 |------|---------|
-| `initialize` | Idempotent post-clone setup. |
+| `initialize` | Idempotent post-clone setup; seeds target ledger + starter backlog. |
 | `setup` | Install/uninstall managed git hooks and configured VSCode plugins. |
 | `agent` | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Validate skill routing, docs references, and command inventory. |
@@ -269,6 +271,49 @@ def seed_operating_pack(knobs: dict) -> None:
         )
 
 
+def load_seeded_ideas() -> list[dict]:
+    if not IDEAS_PATH.exists():
+        return []
+    rows: list[dict] = []
+    for line in IDEAS_PATH.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        raw = json.loads(line)
+        if isinstance(raw, dict):
+            rows.append(raw)
+    return rows
+
+
+def seeded_ready_bet() -> dict | None:
+    for row in load_seeded_ideas():
+        if row.get("state") not in {"shaped", "decided", "queued"}:
+            continue
+        checks = row.get("checks")
+        write_scope = row.get("write_scope")
+        if not isinstance(checks, list) or not checks:
+            continue
+        if not isinstance(write_scope, list) or not write_scope:
+            continue
+        if not row.get("parallel_mode") or not row.get("worktree"):
+            continue
+        return row
+    return None
+
+
+def next_bet_receipt() -> list[str]:
+    row = seeded_ready_bet()
+    if row is None:
+        return ["  next:          ./repo.sh ideas ready"]
+    checks = row.get("checks")
+    first_check = checks[0] if isinstance(checks, list) and checks else "./repo.sh ideas ready"
+    return [
+        f"  ready bet:     {row.get('id')} - {row.get('title')}",
+        f"  proof:         target={row.get('target')} owner={row.get('owner')}",
+        "  run now:       ./repo.sh ideas ready",
+        f"  check:         {first_check}",
+    ]
+
+
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> int:
     print(f"$ {' '.join(cmd)}")
     proc = subprocess.run(cmd, cwd=cwd or REPO_ROOT)
@@ -316,7 +361,8 @@ def main() -> int:
     print(f"  readme:        {README_PATH}")
     print(f"  context:       {CONTEXT_PATH}")
     print(f"  adr index:     {ADR_INDEX}")
-    print(f"  next:          ./repo.sh agent query probe --path AGENTS.md --verb change")
+    for line in next_bet_receipt():
+        print(line)
     return 0
 
 

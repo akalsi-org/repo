@@ -142,7 +142,7 @@ remain isolated by worktree.
 
 | Command | Mode | Purpose |
 |---------|------|---------|
-| `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/, run setup + bootstrap + agent_check, stamp completion. |
+| `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/ + target ledger + starter backlog, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Python | Validate skill routing, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
 | `ideas` | Python | Manage idea inventory, scoring, readiness gates, and stale idea reports. |

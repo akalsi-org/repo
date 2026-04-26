@@ -488,7 +488,62 @@ class IdeasCliTest(unittest.TestCase):
       proc.stdout,
     )
     self.assertIn(f"target: {TARGET_ID} owner=ideas", proc.stdout)
+    self.assertIn("lifecycle=active_work", proc.stdout)
+    self.assertIn("archive_candidate=no", proc.stdout)
+    self.assertIn("review=review_missing", proc.stdout)
     self.assertIn("facet_budget: ideas", proc.stdout)
+
+  def test_report_lists_target_review_timing(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "stale-review",
+      "--title",
+      "Stale review",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "done",
+    )
+    self.run_ideas(
+      "review",
+      "stale-review",
+      "--expected",
+      "old review recorded",
+      "--actual",
+      "old review stored",
+      "--follow-up",
+      "refresh cadence",
+    )
+    rows = json.loads(self.run_ideas("list", "--json").stdout)["ideas"]
+    rows[0]["outcome_review"]["reviewed_at"] = "2000-01-01T00:00:00+00:00"
+    write(
+      self.root / ".agents/ideas/ideas.jsonl",
+      "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn(f"target: {TARGET_ID} owner=ideas", proc.stdout)
+    self.assertIn("lifecycle=proved_idle", proc.stdout)
+    self.assertIn("archive_candidate=yes", proc.stdout)
+    self.assertIn("review=overdue", proc.stdout)
+    self.assertIn("last_reviewed=2000-01-01T00:00:00+00:00", proc.stdout)
+    self.assertIn("target: review-loop owner=ideas status=active active=0 done=0 blocked=0 lifecycle=idle archive_candidate=no review=review_missing", proc.stdout)
 
   def test_unknown_target_rejected(self) -> None:
     proc = self.run_ideas(

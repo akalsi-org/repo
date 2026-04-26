@@ -29,7 +29,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 
 | Verb | Purpose |
 |------|---------|
-| `initialize` | Idempotent post-clone setup: renders LICENSE/README, seeds CONTEXT.md + docs/adr/, runs setup + bootstrap + agent_check. |
+| `initialize` | Idempotent post-clone setup: renders LICENSE/README, seeds CONTEXT.md + docs/adr/ + target ledger + starter backlog, runs setup + bootstrap + agent_check. |
 | `setup` | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `agent` | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Validate skill routing, doc references, and Facet-backed command inventory. |
