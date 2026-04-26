@@ -903,6 +903,32 @@ def filter_learning_rows(
   return filtered
 
 
+def pick_learning_row(
+    rows: list[dict[str, object]],
+    *,
+    lesson_id: str | None,
+    facet: str | None,
+    target: str | None,
+    check: str | None,
+    artifact: str | None,
+) -> dict[str, object]:
+  if lesson_id is not None:
+    return find_learning_row(rows, lesson_id)
+  filtered = filter_learning_rows(
+    rows,
+    facet=facet,
+    target=target,
+    check=check,
+    artifact=artifact,
+  )
+  if not filtered:
+    raise SystemExit("activate_next_bet needs --lesson-id or filters matching one lesson")
+  if len(filtered) > 1:
+    matches = ",".join(str(row.get("id")) for row in filtered[:5])
+    raise SystemExit(f"activate_next_bet matched multiple lessons: {matches}")
+  return filtered[0]
+
+
 def is_queue_ready(row: dict[str, object]) -> bool:
   return not readiness_blockers(row)
 
@@ -1117,7 +1143,14 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   freshness_issues = learning_ledger_freshness_issues(rows, ledger, learning_rows)
   if freshness_issues:
     raise SystemExit("\n".join(freshness_issues))
-  lesson = find_learning_row(learning_rows, args.lesson_id)
+  lesson = pick_learning_row(
+    learning_rows,
+    lesson_id=args.lesson_id,
+    facet=args.facet,
+    target=args.target,
+    check=args.check_filter,
+    artifact=args.artifact,
+  )
   if any(row.get("id") == args.idea_id for row in rows):
     raise SystemExit(f"idea `{args.idea_id}` already exists")
   if ledger.get(args.target_id) is not None:
@@ -1200,7 +1233,7 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows.append(row)
   write_target_rows(root, target_rows)
   write_rows(root, rows)
-  print(f"activated {args.idea_id} from {args.lesson_id}")
+  print(f"activated {args.idea_id} from {lesson.get('id')}")
   return 0
 
 
@@ -1458,7 +1491,11 @@ def build_parser() -> argparse.ArgumentParser:
   p_sync_learning.set_defaults(func=cmd_sync_learning_ledger)
 
   p_activate = sub.add_parser("activate_next_bet")
-  p_activate.add_argument("--lesson-id", required=True)
+  p_activate.add_argument("--lesson-id")
+  p_activate.add_argument("--facet")
+  p_activate.add_argument("--target")
+  p_activate.add_argument("--check-filter")
+  p_activate.add_argument("--artifact")
   p_activate.add_argument("--target-id", required=True)
   p_activate.add_argument("--target-title", required=True)
   p_activate.add_argument("--idea-id", required=True)

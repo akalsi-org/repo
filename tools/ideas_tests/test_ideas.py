@@ -896,6 +896,108 @@ class IdeasCliTest(unittest.TestCase):
     self.assertNotEqual(proc.returncode, 0)
     self.assertIn("missing or empty", proc.stderr)
 
+  def test_activate_next_bet_picks_single_filtered_lesson(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      "\n".join([
+        json.dumps(
+          {
+            "id": "lesson_one",
+            "target_id": TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source",
+            "source_artifact": "tools/ideas.py",
+            "check": "./repo.sh ideas ready",
+            "lesson": "first lesson",
+            "follow_up": "first follow up",
+            "reviewed_at": "2026-04-26T12:00:00+00:00",
+          }
+        ),
+        json.dumps(
+          {
+            "id": "lesson_two",
+            "target_id": REVIEW_TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source-two",
+            "source_artifact": "tools/initialize",
+            "check": "./repo.sh ideas report --cost",
+            "lesson": "second lesson",
+            "follow_up": "second follow up",
+            "reviewed_at": "2026-04-26T12:01:00+00:00",
+          }
+        ),
+      ]) + "\n",
+    )
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--artifact",
+      "initialize",
+      "--target-id",
+      "activation-target",
+      "--target-title",
+      "Activation target",
+      "--idea-id",
+      "activation-idea",
+      "--idea-title",
+      "Activation idea",
+      "--effect",
+      "Queue refills from evidence-backed repo truth",
+    )
+    self.assertIn("activated activation-idea from lesson_two", proc.stdout)
+    ideas_rows = json.loads(self.run_ideas("list", "--json").stdout)["ideas"]
+    self.assertEqual(ideas_rows[0]["write_scope"], ["tools/initialize"])
+
+  def test_activate_next_bet_fails_on_ambiguous_filtered_lessons(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      "\n".join([
+        json.dumps(
+          {
+            "id": "lesson_one",
+            "target_id": TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source",
+            "source_artifact": "tools/ideas.py",
+            "check": "./repo.sh ideas ready",
+            "lesson": "first lesson",
+            "follow_up": "first follow up",
+            "reviewed_at": "2026-04-26T12:00:00+00:00",
+          }
+        ),
+        json.dumps(
+          {
+            "id": "lesson_two",
+            "target_id": REVIEW_TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source-two",
+            "source_artifact": "tools/initialize",
+            "check": "./repo.sh ideas report --cost",
+            "lesson": "second lesson",
+            "follow_up": "second follow up",
+            "reviewed_at": "2026-04-26T12:01:00+00:00",
+          }
+        ),
+      ]) + "\n",
+    )
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--facet",
+      "ideas",
+      "--target-id",
+      "activation-target",
+      "--target-title",
+      "Activation target",
+      "--idea-id",
+      "activation-idea",
+      "--idea-title",
+      "Activation idea",
+      "--effect",
+      "Queue refills from evidence-backed repo truth",
+      check=False,
+    )
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("activate_next_bet matched multiple lessons: lesson_one,lesson_two", proc.stderr)
+
   def test_lessons_lists_filtered_rows(self) -> None:
     write(
       self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
