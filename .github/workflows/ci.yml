@@ -32,6 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Help sanity
+        run: ./repo.sh --help
+
       - name: Restore bootstrap cache
         id: cache_bootstrap
         uses: actions/cache/restore@v4
@@ -45,6 +48,11 @@ jobs:
 
       - name: Bootstrap
         run: ./repo.sh true
+
+      - name: Bootstrap plan
+        run: |
+          ./repo.sh __repo_bootstrap_plan
+          ./repo.sh __repo_bootstrap_plan --json
 
       - name: Environment smoke
         run: |
@@ -67,11 +75,23 @@ jobs:
       - name: System test
         run: ./repo.sh system_test
 
+      - name: repo.sh tests
+        run: ./repo.sh python3 -m unittest tools.repo_sh_tests.test_bootstrap_plan
+
+      - name: system_test tests
+        run: ./repo.sh python3 -m unittest tools.system_test_tests.test_manifest
+
       - name: agent_check tests
         run: ./repo.sh python3 -m unittest discover tools/agent_check_tests
 
       - name: agent KB tests
         run: ./repo.sh python3 -m unittest discover tools/agent_kb_tests
+
+      - name: ideas tests
+        run: ./repo.sh python3 -m unittest discover tools/ideas_tests
+
+      - name: ideas report
+        run: ./repo.sh ideas report
 
       - name: Whitespace check
         run: git diff --check

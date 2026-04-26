@@ -33,6 +33,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `setup` | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `agent` | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Validate skill routing, doc references, and Facet-backed command inventory. |
+| `ideas` | Manage idea inventory, scoring, readiness gates, and stale idea reports. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 
@@ -48,7 +49,9 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `docs/adr/` | Numbered architectural decision records (`NNNN_slug.md`). |
 | `.agents/skills/` | Per-skill `<name>/SKILL.md` (hyphenated names; never underscored). |
 | `.agents/facet/` | Declarative Facet manifests for repo-level AI capabilities; presence means enabled. |
+| `.agents/facet/maintenance/` | Scheduled repo upkeep ownership, including CI cache warming. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest: default cluster size, shared service port, host port base, and enabled backend checks. |
+| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |
 | `.agents/repo.json` | Per-product knobs and Facet configuration. |
 | `bootstrap/fetch_binary.sh` | Generic helper: pinned binary tarball → `.local/toolchain/$ARCH`. |

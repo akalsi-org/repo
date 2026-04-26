@@ -1,0 +1,48 @@
+{
+  "name": "maintenance",
+  "description": "Scheduled repository maintenance jobs such as cache warming.",
+  "owns": [
+    ".github/workflows/cache_warm.yml",
+    ".github/workflows/maintenance.yml",
+    ".agents/facet/maintenance/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".github/workflows/ci.yml",
+        "bootstrap/vars/local_cache_key.sh",
+        "bootstrap/tools/*.sh",
+        ".agents/repo.json",
+        ".agents/facet/bootstrap/facet.json"
+      ],
+      "skills": [
+        "cache-hygiene",
+        "doc-sync"
+      ],
+      "reason": "Maintenance jobs must follow the same cache key, cache path, and bootstrap policy as CI."
+    }
+  ],
+  "commands": [],
+  "checks": [
+    {
+      "name": "agent_check_stale",
+      "command": "./repo.sh agent_check --stale-only",
+      "closeout": true
+    },
+    {
+      "name": "whitespace",
+      "command": "git diff --check",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "ci"
+    },
+    {
+      "surface": "README.md",
+      "projection": "layout"
+    }
+  ]
+}

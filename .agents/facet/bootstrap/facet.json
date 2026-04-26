@@ -3,7 +3,7 @@
   "description": "Toolchain bootstrap, source mirrors, bootstrap artifacts, and CI cache policy.",
   "owns": [
     "bootstrap/**",
-    ".github/workflows/**",
+    ".github/workflows/ci.yml",
     "tools/source_mirror",
     "tools/bootstrap_artifact_release.py",
     "tools/repo_sh_tests/**",
@@ -19,6 +19,17 @@
         "cache-hygiene"
       ],
       "reason": "Bootstrap and mirror configuration lives in repo config."
+    },
+    {
+      "paths": [
+        ".github/workflows/cache_warm.yml",
+        ".agents/facet/maintenance/facet.json"
+      ],
+      "skills": [
+        "cache-hygiene",
+        "doc-sync"
+      ],
+      "reason": "Scheduled cache maintenance must track bootstrap cache keys and cache paths."
     }
   ],
   "commands": [

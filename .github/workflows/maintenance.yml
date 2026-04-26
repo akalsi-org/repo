@@ -1,0 +1,36 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: '30 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore bootstrap cache
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: |
+            .local/toolchain
+            .local/stamps
+          key: repo_bootstrap_x86_64_${{ hashFiles('bootstrap/vars/local_cache_key.sh', '.agents/repo.json', 'bootstrap/tools/*.sh') }}
+          restore-keys: |
+            repo_bootstrap_x86_64_
+
+      - name: Bootstrap
+        run: ./repo.sh true
+
+      - name: Agent stale-doc check
+        run: ./repo.sh agent_check --stale-only
+
+      - name: Idea inventory report
+        run: ./repo.sh ideas report

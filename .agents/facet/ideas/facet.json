@@ -1,0 +1,53 @@
+{
+  "name": "ideas",
+  "description": "Idea inventory, backlog gates, and target-driven execution intake.",
+  "owns": [
+    ".agents/ideas/**",
+    ".agents/facet/ideas/**",
+    "tools/ideas",
+    "tools/ideas.py",
+    "tools/ideas_tests/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/facet/**",
+        ".agents/kb_src/**",
+        "docs/adr/**"
+      ],
+      "skills": [
+        "ideate",
+        "doc-sync"
+      ],
+      "reason": "Ideas graduate through Facet ownership, KB facts, and decision records."
+    }
+  ],
+  "commands": [
+    {
+      "name": "ideas",
+      "purpose": "Manage idea inventory, scoring, readiness gates, and stale idea reports."
+    }
+  ],
+  "checks": [
+    {
+      "name": "ideas_tests",
+      "command": "./repo.sh python3 -m unittest discover tools/ideas_tests",
+      "closeout": true
+    },
+    {
+      "name": "ideas_report",
+      "command": "./repo.sh ideas report",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "commands"
+    },
+    {
+      "surface": "README.md",
+      "projection": "commands"
+    }
+  ]
+}

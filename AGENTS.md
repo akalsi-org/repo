@@ -6,15 +6,17 @@ documents describe the same facts in different framings.
 
 ## 1. Default communication style
 
-All agents operate in **caveman mode** by default in this repository:
-terse, no filler, articles dropped, fragments OK, technical content
-exact. See `.agents/skills/caveman/SKILL.md`. Override per-session by
-saying "stop caveman" or "normal mode."
+All agents operate in **strict caveman mode** by default in this
+repository: terse, no filler, articles dropped, fragments OK,
+technical content exact. "Caveman" always means strict caveman; there
+is no soft caveman, light caveman, or mostly-caveman mode. See
+`.agents/skills/caveman/SKILL.md`. Override per-session only by saying
+"stop caveman" or "normal mode."
 
-The auto-clarity exception still applies — drop caveman temporarily
-for security warnings, irreversible-action confirmations, and
-multi-step sequences where fragment order risks misread. Resume
-caveman after.
+The auto-clarity exception is narrow: drop strict caveman temporarily
+only for security warnings, irreversible-action confirmations, or
+multi-step sequences where fragment order risks misread. Resume strict
+caveman immediately after.
 
 ## 2.1 Skills
 
@@ -37,6 +39,7 @@ hyphens; everything else uses underscores (see §6 Naming).
 | `debate-and-decide` | A load-bearing decision has two defensible sides and no existing ADR resolves it. | `.agents/skills/debate-and-decide/SKILL.md` |
 | `grill-me` | Stress-testing a plan via relentless interview. | `.agents/skills/grill-me/SKILL.md` |
 | `ideate` | Generating a horizon-spanning idea portfolio (short / medium / long / visionary) with 1st-/2nd-/3rd-order effect classification. | `.agents/skills/ideate/SKILL.md` |
+| `c-suite` | Running a virtual executive board meeting to balance ideas, backlog, vision, cost, Facets, and priorities; CEO decides. | `.agents/skills/c-suite/SKILL.md` |
 | `debate-and-decide` | A load-bearing question is genuinely contested, no ADR resolves it, and at least two defensible positions exist. Two sub-agents argue; parent escalates only preference-shaped cruxes to the user. | `.agents/skills/debate-and-decide/SKILL.md` |
 | `triage-issue` | A bug needs investigation + a TDD fix plan filed as an issue. | `.agents/skills/triage-issue/SKILL.md` |
 | `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
@@ -91,6 +94,7 @@ steps so failures identify the stage that broke.
 | `.agents/facet/<name>/facet.json` | Declarative Facet manifests for repo-level AI capabilities: owned paths, commands, checks, and doc projections. |
 | `.agents/facet/root/facet.json` | Root Facet. Display name `/`; owns baseline template substrate and repo-level defaults. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest. Declares default cluster size and enabled backend checks. |
+| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input. |
 | `.agents/skills/<name>/` | Skill bodies. Hyphenated folder names. |
 | `.agents/skills/index.md` | Path-pattern → skill routing table. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |
@@ -114,6 +118,7 @@ steps so failures identify the stage that broke.
 | `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Python | Validate skill routing, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
+| `ideas` | Python | Manage idea inventory, scoring, readiness gates, and stale idea reports. |
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
@@ -147,8 +152,9 @@ CI restores `.local/toolchain/` plus `.local/stamps/` with
 `./repo.sh`, and saves those bootstrap paths only from non-PR runs on
 cache misses. Cache keys are scoped by architecture and by
 `bootstrap/vars/local_cache_key.sh`, `.agents/repo.json`, and
-`bootstrap/tools/*.sh`. The bootstrap Facet owns CI workflow cache
-policy and must stay in sync with workflow changes. Repo Python
+`bootstrap/tools/*.sh`. The bootstrap Facet owns CI bootstrap/cache
+policy in `ci.yml`; the maintenance Facet owns scheduled cache
+warming. Repo Python
 commands run through the pinned musl CPython 3.14 installed by
 `bootstrap/tools/python.sh`; its wrapper uses the bootstrapped Alpine
 musl loader from the bwrap bootstrap. `python.sh` declares
@@ -165,9 +171,12 @@ live socket binds, using host-global lock-file claims under
 nodes receive a generated `/etc/hosts` mapping (`node-0`, `node-1`,
 ...).
 
-`cache_warm.yml` periodically restores the same cache keys to reset
-GitHub's LRU timer. Restore misses are acceptable and must not fail
-the workflow.
+`cache_warm.yml` is a maintenance Facet cron job. It periodically
+restores the same cache keys to reset GitHub's LRU timer. `maintenance.yml`
+runs stale-doc and idea-inventory hygiene. Restore misses are
+acceptable and must not fail the workflow. Add future scheduled repo
+upkeep under `.agents/facet/maintenance/` unless a more specific Facet
+clearly owns it.
 
 ## 15. Subsystems
 

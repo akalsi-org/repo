@@ -12,12 +12,16 @@
     {
       "paths": [
         "tools/agent_check.py",
-        "tools/agent_check_tests/**"
+        "tools/agent_check_tests/**",
+        ".agents/ideas/**",
+        "tools/ideas",
+        "tools/ideas.py"
       ],
       "skills": [
-        "doc-sync"
+        "doc-sync",
+        "ideate"
       ],
-      "reason": "Changes may affect skill routing validation."
+      "reason": "Changes may affect skill routing validation or priority-board inputs."
     }
   ],
   "commands": [],
