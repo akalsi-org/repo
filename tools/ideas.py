@@ -35,6 +35,16 @@ DACI_LIST_FIELDS = ("contributors", "informed")
 ACTIVE_STATES = {"seed", "shaped", "decided", "queued", "active"}
 READY_STATE_PRIORITY = {"queued": 2, "decided": 1, "shaped": 0}
 OUTCOME_REVIEW_FIELDS = ("expected", "actual", "follow_up", "reviewed_at")
+LEARNING_LEDGER_SCHEMA_VERSION = "1.0"
+LEARNING_LEDGER_REQUIRED_FIELDS = frozenset((
+  "id",
+  "lesson",
+  "check",
+  "facet",
+  "reviewed_at",
+  "source_idea",
+  "target_id",
+))
 CADENCE_INTERVALS = {
   "daily": timedelta(days=1),
   "weekly": timedelta(days=7),
@@ -182,6 +192,15 @@ def load_learning_ledger_rows(root: pathlib.Path) -> list[dict[str, object]]:
       raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: invalid JSON: {exc.msg}") from exc
     if not isinstance(row, dict):
       raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: row must be object")
+    # Validate required fields
+    missing = LEARNING_LEDGER_REQUIRED_FIELDS - set(row.keys())
+    if missing:
+      raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: missing required fields: {sorted(missing)}")
+    # Validate non-empty id and lesson
+    if not row.get("id") or not isinstance(row["id"], str):
+      raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: id must be non-empty string")
+    if not row.get("lesson") or not isinstance(row["lesson"], str):
+      raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: lesson must be non-empty string")
     rows.append(row)
   return rows
 

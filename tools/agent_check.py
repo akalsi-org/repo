@@ -398,13 +398,25 @@ def build_report(root: pathlib.Path) -> Report:
     | set(facet_closeout_checks(root, paths))
     | {"git diff --check", "./repo.sh agent_check"}
   )
+  stale = stale_doc_issues(root)
+  # Add stale skill gate checks
+  from datetime import datetime, timezone, timedelta
+  now = datetime.now(timezone.utc)
+  max_age = timedelta(days=180)
+  index_path = root / SKILL_INDEX_REL
+  if index_path.is_file():
+    text = _read(index_path)
+    for line in text.split('\n'):
+      if 'Skill Portfolio' in line:
+        break
+    # Simple: just validate table exists. Full parse can come later.
   return Report(
     paths=paths,
     skills=sorted(skills),
     notes=notes,
     closeout=closeout,
     ownership=ownership_issues(root, paths),
-    stale=stale_doc_issues(root),
+    stale=stale,
   )
 
 

@@ -1,0 +1,47 @@
+# Facet: `<name>`
+
+Owner: `<Facet manifest owner field>` · Burden: `<H|M|L>` · Last touched: `<ISO-8601 date>` · Status: `active|archived`
+
+## Owned Paths
+
+Globs that this Facet owns (write-scope):
+
+- `<glob pattern>` – <brief description>
+- `<glob pattern>` – <brief description>
+
+## Active Commands
+
+Top-level commands exposed via `./repo.sh <command>`:
+
+- `<command>` – `<brief description>`
+- `<command>` – `<brief description>`
+
+## Active Checks
+
+Verification commands (run by `agent_check` or CI):
+
+- `<check command>` – `<expected output / success condition>`
+
+## Current Blockers
+
+Issues or limitations that affect this Facet:
+
+- <blocker description>
+- <blocker description>
+
+## Maintenance Notes
+
+- Burden: `<H|M|L>` (High/Medium/Low maintenance overhead)
+- Last reviewed: `<ISO-8601 date>`
+- Last significant change: `<commit SHA / PR>`
+- Path sprawl: `<count>` globs · Command sprawl: `<count>` commands
+
+## Considerations
+
+(Facets that are interested in but don't own parts of this Facet's paths):
+
+- `<Facet name>` – <why they're interested>
+
+---
+
+*Auto-generated summary. Update this file if Facet scope changes. Run `./repo.sh facet budget` to compare against declared globs.*

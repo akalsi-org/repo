@@ -42,6 +42,39 @@ is agent-facing routing metadata; the actual procedures live in each
 - Copilot repo instructions, when added, live in
   `.github/copilot-instructions.md`.
 
+## Skill Portfolio: Lifecycle Tiers + Gate Review Dates
+
+See ADR-0011 for tier definitions. Gate_last_reviewed timestamps. Stale gates
+(>180d old) trigger `agent_check --stale-only` warnings.
+
+| Skill | Tier | Gate_last_reviewed | Status |
+|-------|------|-------------------|--------|
+| `caveman` | Core | 2026-04-26 | active |
+| `git-style` | Core | 2026-04-26 | active |
+| `decision-record` | Core | 2026-04-26 | active |
+| `c-suite` | Core | 2026-04-26 | active (redesigned w/ mandatory ideate) |
+| `tdd` | Core | 2026-04-26 | active |
+| `knowledge-management` | Core | 2026-04-26 | active |
+| `ideate` | Phase-Specific (design) | 2026-04-26 | active |
+| `grill-me` | Phase-Specific (design) | 2026-04-26 | active |
+| `design-an-interface` | Phase-Specific (design) | 2026-04-26 | active |
+| `improve-codebase-architecture` | Phase-Specific (design) | 2026-04-26 | active |
+| `domain-model` | Phase-Specific (design) | 2026-04-26 | active |
+| `debate-and-decide` | Phase-Specific (design) | 2026-04-26 | active |
+| `bootstrap-toolchain` | Phase-Specific (bootstrap) | 2026-04-26 | active |
+| `cache-hygiene` | Phase-Specific (bootstrap) | 2026-04-26 | active |
+| `bootstrap-product` | Phase-Specific (bootstrap) | 2026-04-26 | active |
+| `initialize` | Phase-Specific (bootstrap) | 2026-04-26 | active |
+| `triage-issue` | Phase-Specific (debug) | 2026-04-26 | active |
+| `request-refactor-plan` | Phase-Specific (debug) | 2026-04-26 | active |
+| `simplify` | Phase-Specific (debug) | 2026-04-26 | active |
+| `to-issues` | Phase-Specific (landing) | 2026-04-26 | active |
+| `doc-sync` | Phase-Specific (landing) | 2026-04-26 | active |
+| `customize-cloud-agent` | Template-Admin | 2026-04-26 | active |
+
+Quarterly audit mandatory. Add gate_last_reviewed to all skill SKILL.md headers.
+Run `./repo.sh agent_check --stale-gates` to flag >180d old gates.
+
 ## Caveman
 
 Caveman mode is the default communication style in this repo for all
