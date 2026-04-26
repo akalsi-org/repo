@@ -57,9 +57,18 @@ checks.
 
 Spawn sub-agents when available and user asked for this skill. Keep
 prompts narrow; each role returns priorities, risks, and vetoes.
+CEO first sets the current vision frame: what world the repo is trying
+to move toward, what near-term target matters, and what trade-offs are
+currently acceptable. Each advisory role must then run a brief
+role-scoped `ideate` pass against that vision: generate options across
+short/medium/long/visionary where credible, name 1st/2nd-order
+effects, map each option to the CEO vision, then narrow to top 3
+priorities. CEO does not count raw brainstorm volume as signal; role
+must filter ideas through its mandate and the vision frame.
 
 - **CEO**: parent agent. Owns final call. Balances vision, velocity,
-  cost, risk, and user preference. May overrule all roles.
+  cost, risk, and user preference. Sets the vision frame before role
+  ideation. May overrule all roles.
 - **COO**: execution flow. Looks at backlog, ready ideas, WIP, stale
   work, CI/check burden.
 - **CTO**: architecture. Checks Facets, ADRs, ownership, interfaces,
@@ -73,6 +82,39 @@ prompts narrow; each role returns priorities, risks, and vetoes.
 
 If sub-agents unavailable, simulate roles explicitly in sections. Do
 not invent consensus. Surface disagreement.
+
+## Role-Scoped Ideation
+
+Before advisory ideation, CEO states:
+
+- Vision: desired future repo capability.
+- Near-term target: measurable next improvement.
+- Trade-offs: what to optimize, what to refuse.
+
+Then roles ideate:
+
+- COO ideates execution options: backlog flow, WIP, checks, CI bands,
+  maintenance cadence, queue readiness.
+- CTO ideates architecture options: Facet contracts, ADR impacts,
+  schemas, no-fallback machinery, interfaces, tests.
+- CFO ideates cost/control options: go-live cost, maintenance budget,
+  CI/cache cost, tool sprawl, reversibility.
+- CPO ideates product/vision options: Template identity, Product fork
+  value, autonomy story, idea/backlog/vision balance.
+- Chief of Staff ideates process options: decision gates, DACI shape,
+  owner Facets, target/check fields, priority cadence. In full-board
+  mode, Chief of Staff normally goes after other roles so process wraps
+  the options already surfaced. In single-role mode, Chief of Staff
+  ideates first from the CEO vision frame and explicitly maps every
+  process idea back to that vision.
+
+Each role output must include:
+
+- 3-6 candidate ideas.
+- 1st/2nd-order effects for each candidate.
+- Vision mapping for each candidate.
+- Top 3 priorities after filtering.
+- 1 stop-line risk.
 
 ## Meeting Agenda
 
@@ -115,6 +157,8 @@ Prefer priorities that satisfy most:
 - Has one owner Facet.
 - Has small first slice.
 - Has cheap checks.
+- Has explicit safe-parallel work metadata: `parallel_mode`,
+  `worktree`, and `write_scope`.
 - Reduces maintenance burden or improves future autonomy.
 - Reversible, unless clearly worth ADR-level commitment.
 - Strengthens repo-local truth over chat-only process.
@@ -163,3 +207,6 @@ Reject or park priorities that:
 - No permanent process without repo artifact.
 - No new Facet unless it owns paths/checks/docs.
 - No issue/worktree until idea passes readiness gate.
+- No parallel execution without separate worktrees and disjoint
+  `write_scope` globs. `serial` items run alone unless CEO explicitly
+  overrides.

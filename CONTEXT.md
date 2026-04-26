@@ -55,6 +55,11 @@ A git worktree of the bare repo. The Template assumes a
 `.bare/ + worktree/` layout for AI-friendly parallelism, with
 `.local/` shared across worktrees.
 
+**Write Scope**:
+The path globs a backlog item may edit. Safe parallel work is allowed
+only when active backlog items use separate Worktrees and their Write
+Scopes do not overlap.
+
 **Toolchain**:
 Pinned third-party tools fetched into `.local/toolchain/$REPO_ARCH/`
 by per-tool specs under `bootstrap/tools/`. Specs may declare

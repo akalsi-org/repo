@@ -144,11 +144,148 @@ class IdeasCliTest(unittest.TestCase):
       "remove row",
       "--maintenance",
       "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      ".agents/ideas/**",
       "--state",
       "shaped",
     )
     proc = self.run_ideas("ready")
     self.assertIn("ready: Ready idea", proc.stdout)
+
+  def test_ready_lists_queued_item_and_blockers(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "queued",
+      "--title",
+      "Queued idea",
+      "--owner",
+      "ideas",
+      "--target",
+      "smooth execution",
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "remove row",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      ".agents/ideas/**",
+      "--state",
+      "shaped",
+    )
+    self.run_ideas("promote", "queued", "--state", "queued")
+    self.run_ideas(
+      "add",
+      "--id",
+      "blocked",
+      "--title",
+      "Blocked idea",
+      "--owner",
+      "ideas",
+      "--target",
+      "smooth execution",
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "remove row",
+      "--maintenance",
+      "L",
+      "--state",
+      "shaped",
+      "--decision-required",
+    )
+    proc = self.run_ideas("ready")
+    self.assertIn("queued: Queued idea", proc.stdout)
+    self.assertIn("parallel=safe", proc.stdout)
+    self.assertIn("worktree=required", proc.stdout)
+    self.assertIn("scope=.agents/ideas/**", proc.stdout)
+    self.assertIn("blocked: blocked: decision required", proc.stdout)
+    self.assertIn("missing parallel_mode", proc.stdout)
+
+  def test_executable_item_without_parallel_metadata_is_blocked(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "shaped",
+      "--title",
+      "Shaped idea",
+      "--owner",
+      "ideas",
+      "--target",
+      "smooth execution",
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "remove row",
+      "--maintenance",
+      "L",
+      "--state",
+      "shaped",
+    )
+    proc = self.run_ideas("ready")
+    self.assertIn("blocked: shaped: missing parallel_mode", proc.stdout)
+    self.assertIn("missing worktree", proc.stdout)
+    self.assertIn("missing write_scope", proc.stdout)
+
+  def test_add_records_cost_fields(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "costed",
+      "--title",
+      "Costed idea",
+      "--owner",
+      "ideas",
+      "--target",
+      "smooth execution",
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "remove row",
+      "--maintenance",
+      "L",
+      "--go-live-cost",
+      "L",
+      "--maintenance-overhead",
+      "M",
+      "--check-cost",
+      "L",
+      "--tool-sprawl",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+    )
+    proc = self.run_ideas("list", "--json")
+    payload = json.loads(proc.stdout)
+    row = payload["ideas"][0]
+    self.assertEqual(row["go_live_cost"], "L")
+    self.assertEqual(row["maintenance_overhead"], "M")
+    self.assertEqual(row["check_cost"], "L")
+    self.assertEqual(row["tool_sprawl"], "L")
+    self.assertEqual(row["parallel_mode"], "safe")
+    self.assertEqual(row["worktree"], "required")
+    self.assertEqual(row["write_scope"], ["tools/ideas.py"])
 
   def test_unknown_owner_rejected(self) -> None:
     proc = self.run_ideas(

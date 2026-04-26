@@ -51,7 +51,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `.agents/facet/` | Declarative Facet manifests for repo-level AI capabilities; presence means enabled. |
 | `.agents/facet/maintenance/` | Scheduled repo upkeep ownership, including CI cache warming. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest: default cluster size, shared service port, host port base, and enabled backend checks. |
-| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input. |
+| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input, including safe-parallel worktree metadata. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |
 | `.agents/repo.json` | Per-product knobs and Facet configuration. |
 | `bootstrap/fetch_binary.sh` | Generic helper: pinned binary tarball → `.local/toolchain/$ARCH`. |

@@ -79,6 +79,29 @@ useful after an explicit prior build. CI prefers an explicit build
 step followed by reuse-mode test, package, benchmark, or system-test
 steps so failures identify the stage that broke.
 
+## 4. Safe parallel work
+
+Parallel execution uses git worktrees. Each executable backlog item
+must declare `parallel_mode`, `worktree`, and `write_scope` in
+`.agents/ideas/ideas.jsonl` before an agent starts work.
+
+- `parallel_mode=safe`: may run beside other `safe` items when
+  `write_scope` sets do not overlap.
+- `parallel_mode=serial`: run alone or only after explicit CEO
+  approval; broad docs, initialization, Facet-schema, and cross-cutting
+  command changes usually fit here.
+- `parallel_mode=blocked`: not executable until the blocker is cleared.
+- `worktree=required`: create or use a separate worktree for the item.
+- `worktree=recommended`: worktree preferred; same worktree acceptable
+  only for tiny documentation-only edits.
+- `worktree=optional`: safe in current tree when no other active work
+  overlaps.
+
+Agents must not run two backlog items in parallel when their
+`write_scope` globs overlap, when either item is `serial`, or when one
+item depends on the other. Shared `.local/` is allowed; source edits
+remain isolated by worktree.
+
 ## 5. Layout
 
 | Path | Role |
@@ -94,7 +117,7 @@ steps so failures identify the stage that broke.
 | `.agents/facet/<name>/facet.json` | Declarative Facet manifests for repo-level AI capabilities: owned paths, commands, checks, and doc projections. |
 | `.agents/facet/root/facet.json` | Root Facet. Display name `/`; owns baseline template substrate and repo-level defaults. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest. Declares default cluster size and enabled backend checks. |
-| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input. |
+| `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input, including safe-parallel worktree metadata. |
 | `.agents/skills/<name>/` | Skill bodies. Hyphenated folder names. |
 | `.agents/skills/index.md` | Path-pattern → skill routing table. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |

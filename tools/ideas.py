@@ -22,7 +22,10 @@ IDEAS_REL = ".agents/ideas/ideas.jsonl"
 STATES = ("seed", "shaped", "decided", "queued", "active", "done", "rejected", "parked")
 SCORES = ("H", "M", "L")
 VERDICTS = ("Do now", "Design first", "Watch", "Avoid")
-QUEUE_READY_STATES = ("shaped", "decided")
+QUEUE_READY_STATES = ("shaped", "decided", "queued")
+COST_FIELDS = ("go_live_cost", "maintenance_overhead", "check_cost", "tool_sprawl")
+PARALLEL_MODES = ("safe", "serial", "blocked")
+WORKTREE_MODES = ("required", "recommended", "optional")
 
 
 def utc_now() -> str:
@@ -85,6 +88,23 @@ def validate_row(root: pathlib.Path, row: dict[str, object]) -> list[str]:
   score = row.get("score", {})
   if score is not None and not isinstance(score, dict):
     issues.append(f"{ident or '<unknown>'}: score must be object")
+  for field in COST_FIELDS:
+    value = row.get(field)
+    if value is not None and value not in SCORES:
+      issues.append(f"{ident or '<unknown>'}: {field} must be H, M, or L")
+  parallel_mode = row.get("parallel_mode")
+  if parallel_mode is not None and parallel_mode not in PARALLEL_MODES:
+    issues.append(f"{ident or '<unknown>'}: parallel_mode must be safe, serial, or blocked")
+  worktree = row.get("worktree")
+  if worktree is not None and worktree not in WORKTREE_MODES:
+    issues.append(f"{ident or '<unknown>'}: worktree must be required, recommended, or optional")
+  write_scope = row.get("write_scope")
+  if write_scope is not None and (
+      not isinstance(write_scope, list)
+      or not write_scope
+      or not all(isinstance(v, str) and v for v in write_scope)
+  ):
+    issues.append(f"{ident or '<unknown>'}: write_scope must be non-empty list[str]")
   return issues
 
 
@@ -113,15 +133,47 @@ def parse_check(values: list[str]) -> list[str]:
 
 
 def is_queue_ready(row: dict[str, object]) -> bool:
-  if row.get("state") not in QUEUE_READY_STATES:
-    return False
+  return not readiness_blockers(row)
+
+
+def queue_blockers(row: dict[str, object]) -> list[str]:
+  blockers: list[str] = []
+  if row.get("state") not in {"shaped", "decided", "queued"}:
+    blockers.append(f"state {row.get('state')}")
   if row.get("decision_required") is True:
-    return False
+    blockers.append("decision required")
   required = ("target", "reversibility")
-  if any(not isinstance(row.get(key), str) or not row.get(key) for key in required):
-    return False
+  for key in required:
+    if not isinstance(row.get(key), str) or not row.get(key):
+      blockers.append(f"missing {key}")
   checks = row.get("checks", [])
-  return isinstance(checks, list) and bool(checks)
+  if not isinstance(checks, list) or not checks:
+    blockers.append("missing checks")
+  return blockers
+
+
+def readiness_blockers(row: dict[str, object]) -> list[str]:
+  blockers = queue_blockers(row)
+  if not row.get("parallel_mode"):
+    blockers.append("missing parallel_mode")
+  if not row.get("worktree"):
+    blockers.append("missing worktree")
+  if not row.get("write_scope"):
+    blockers.append("missing write_scope")
+  return blockers
+
+
+def ready_suffix(row: dict[str, object]) -> str:
+  parts: list[str] = []
+  for field in ("parallel_mode", "worktree"):
+    value = row.get(field)
+    if isinstance(value, str) and value:
+      name = "parallel" if field == "parallel_mode" else field
+      parts.append(f"{name}={value}")
+  write_scope = row.get("write_scope")
+  if isinstance(write_scope, list) and write_scope:
+    parts.append("scope=" + ",".join(str(v) for v in write_scope))
+  return f" [{' '.join(parts)}]" if parts else ""
 
 
 def cmd_list(root: pathlib.Path, args: argparse.Namespace) -> int:
@@ -168,6 +220,16 @@ def cmd_add(root: pathlib.Path, args: argparse.Namespace) -> int:
     "created_at": now,
     "updated_at": now,
   }
+  for field in COST_FIELDS:
+    value = getattr(args, field)
+    if value is not None:
+      row[field] = value
+  if args.parallel_mode is not None:
+    row["parallel_mode"] = args.parallel_mode
+  if args.worktree is not None:
+    row["worktree"] = args.worktree
+  if args.write_scope is not None:
+    row["write_scope"] = parse_check(args.write_scope)
   issues = validate_row(root, row)
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
@@ -198,10 +260,10 @@ def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
 def cmd_promote(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
   row = find_row(rows, args.id)
-  if args.state == "queued" and not is_queue_ready(row):
+  blockers = queue_blockers(row)
+  if args.state == "queued" and blockers:
     raise SystemExit(
-      "cannot queue: needs state shaped/decided, target, checks, "
-      "reversibility, and decision_required=false"
+      "cannot queue: " + ", ".join(blockers)
     )
   row["state"] = args.state
   row["updated_at"] = utc_now()
@@ -224,12 +286,21 @@ def cmd_park(root: pathlib.Path, args: argparse.Namespace) -> int:
 def cmd_ready(root: pathlib.Path, args: argparse.Namespace) -> int:
   del args
   rows = load_rows(root)
+  issues = validate_rows(root, rows)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   ready = [row for row in rows if is_queue_ready(row)]
+  blocked = [
+    (row, readiness_blockers(row))
+    for row in rows
+    if row.get("state") in QUEUE_READY_STATES and not is_queue_ready(row)
+  ]
   if not ready:
     print("ready: none")
-    return 0
   for row in ready:
-    print(f"{row['id']}: {row.get('title', '')}")
+    print(f"{row['id']}: {row.get('title', '')}{ready_suffix(row)}")
+  for row, blockers in blocked:
+    print(f"blocked: {row.get('id')}: {', '.join(blockers)}")
   return 0
 
 
@@ -282,6 +353,13 @@ def build_parser() -> argparse.ArgumentParser:
   p_add.add_argument("--check", action="append", required=True)
   p_add.add_argument("--reversibility", required=True)
   p_add.add_argument("--maintenance", choices=SCORES, required=True)
+  p_add.add_argument("--go-live-cost", dest="go_live_cost", choices=SCORES)
+  p_add.add_argument("--maintenance-overhead", choices=SCORES)
+  p_add.add_argument("--check-cost", choices=SCORES)
+  p_add.add_argument("--tool-sprawl", choices=SCORES)
+  p_add.add_argument("--parallel-mode", choices=PARALLEL_MODES)
+  p_add.add_argument("--worktree", choices=WORKTREE_MODES)
+  p_add.add_argument("--write-scope", action="append")
   p_add.add_argument("--state", choices=STATES, default="seed")
   p_add.add_argument("--decision-required", action="store_true")
   p_add.add_argument("--notes")
