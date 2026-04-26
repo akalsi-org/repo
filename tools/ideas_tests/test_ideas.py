@@ -998,6 +998,50 @@ class IdeasCliTest(unittest.TestCase):
     self.assertNotEqual(proc.returncode, 0)
     self.assertIn("activate_next_bet matched multiple lessons: lesson_one,lesson_two", proc.stderr)
 
+  def test_activate_next_bet_scaffolds_defaults_from_lesson(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_scaffold",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "auth-work",
+          "source_artifact": "src/auth/handler.go",
+          "check": "./repo.sh test",
+          "lesson": "JWT library needs custom claims",
+          "follow_up": "Add custom claims support to JWT encoder",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--lesson-id",
+      "lesson_scaffold",
+      "--driver",
+      "ideas",
+      "--approver",
+      "CEO",
+    )
+    self.assertIn("activated auth-work-follow-up", proc.stdout)
+    self.assertIn("target=smooth-execution-follow-up", proc.stdout)
+    ideas_rows = json.loads(self.run_ideas("list", "--json").stdout)["ideas"]
+    self.assertEqual(ideas_rows[0]["id"], "auth-work-follow-up")
+    self.assertEqual(ideas_rows[0]["target"], "smooth-execution-follow-up")
+    self.assertEqual(ideas_rows[0]["source_lesson"], "lesson_scaffold")
+    self.assertEqual(ideas_rows[0]["source_target"], TARGET_ID)
+    self.assertEqual(ideas_rows[0]["source_check"], "./repo.sh test")
+    self.assertEqual(ideas_rows[0]["source_artifact"], "src/auth/handler.go")
+    self.assertIn("evidence: lesson=lesson_scaffold", ideas_rows[0]["notes"])
+    self.assertIn("Add custom claims support to JWT encoder", ideas_rows[0]["effect"])
+    targets = [
+      json.loads(line)
+      for line in (self.root / ".agents/targets/targets.jsonl").read_text(encoding="utf-8").splitlines()
+      if line.strip()
+    ]
+    self.assertEqual(targets[-1]["id"], "smooth-execution-follow-up")
+
   def test_lessons_lists_filtered_rows(self) -> None:
     write(
       self.root / ".agents/kb_src/tables/learning_ledger.jsonl",

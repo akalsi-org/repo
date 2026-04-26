@@ -873,6 +873,42 @@ def evidence_note(lesson: Mapping[str, object]) -> str:
   )
 
 
+def _slugify(text: str) -> str:
+  slug = "-".join(
+    part for part in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
+    if part
+  )
+  return slug or "lesson"
+
+
+def _humanize_slug(text: str) -> str:
+  return " ".join(part.capitalize() for part in text.replace("-", " ").split()) or "Lesson"
+
+
+def derive_activation_defaults(lesson: Mapping[str, object]) -> dict[str, str]:
+  lesson_id = str(lesson.get("id") or "lesson")
+  source_idea = str(lesson.get("source_idea") or lesson_id.removeprefix("lesson_"))
+  source_target = str(lesson.get("target_id") or source_idea)
+  target_id = _slugify(f"{source_target} follow up")
+  idea_id = _slugify(f"{source_idea} follow up")
+  target_title = _humanize_slug(target_id)
+  follow_up = _learning_follow_up_text(lesson)
+  if follow_up is not None:
+    idea_title = follow_up[:1].upper() + follow_up[1:]
+    effect = f"Follow up lesson {lesson_id}: {follow_up}"
+  else:
+    lesson_text = str(lesson.get("lesson") or lesson_id)
+    idea_title = _humanize_slug(idea_id)
+    effect = f"Follow up lesson {lesson_id}: {lesson_text}"
+  return {
+    "target_id": target_id,
+    "target_title": target_title,
+    "idea_id": idea_id,
+    "idea_title": idea_title,
+    "effect": effect,
+  }
+
+
 def _match_filter(value: object, expected: str | None, *, exact: bool) -> bool:
   if expected is None:
     return True
@@ -1151,10 +1187,16 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
     check=args.check_filter,
     artifact=args.artifact,
   )
-  if any(row.get("id") == args.idea_id for row in rows):
-    raise SystemExit(f"idea `{args.idea_id}` already exists")
-  if ledger.get(args.target_id) is not None:
-    raise SystemExit(f"target `{args.target_id}` already exists")
+  defaults = derive_activation_defaults(lesson)
+  target_id = args.target_id or defaults["target_id"]
+  target_title = args.target_title or defaults["target_title"]
+  idea_id = args.idea_id or defaults["idea_id"]
+  idea_title = args.idea_title or defaults["idea_title"]
+  effect = args.effect or defaults["effect"]
+  if any(row.get("id") == idea_id for row in rows):
+    raise SystemExit(f"idea `{idea_id}` already exists")
+  if ledger.get(target_id) is not None:
+    raise SystemExit(f"target `{target_id}` already exists")
   owner = args.owner or lesson.get("facet")
   if not isinstance(owner, str) or not owner:
     raise SystemExit("owner missing from lesson and no --owner supplied")
@@ -1174,8 +1216,8 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
       raise SystemExit("activate_next_bet needs --write-scope when lesson has no source_artifact")
     write_scope = [source_artifact]
   new_target = TargetRecord(
-    id=args.target_id,
-    title=args.target_title,
+    id=target_id,
+    title=target_title,
     owner=owner,
     status="active",
     review_cadence=args.review_cadence,
@@ -1187,12 +1229,12 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   if args.notes:
     note_parts.append(args.notes)
   row: dict[str, object] = {
-    "id": args.idea_id,
-    "title": args.idea_title,
+    "id": idea_id,
+    "title": idea_title,
     "owner": owner,
     "state": args.state,
-    "target": args.target_id,
-    "effect": args.effect,
+    "target": target_id,
+    "effect": effect,
     "checks": checks,
     "reversibility": args.reversibility,
     "maintenance": args.maintenance,
@@ -1207,6 +1249,11 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
     "notes": " ".join(part for part in note_parts if part),
     "created_at": now,
     "updated_at": now,
+    "source_lesson": str(lesson.get("id") or ""),
+    "source_target": str(lesson.get("target_id") or ""),
+    "source_check": str(lesson.get("check") or ""),
+    "source_artifact": str(lesson.get("source_artifact") or ""),
+    "source_reviewed_at": str(lesson.get("reviewed_at") or ""),
   }
   for field in DACI_STR_FIELDS:
     value = getattr(args, field)
@@ -1223,8 +1270,8 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   target_rows.append({
-    "id": args.target_id,
-    "title": args.target_title,
+    "id": target_id,
+    "title": target_title,
     "owner": owner,
     "status": "active",
     "review_cadence": args.review_cadence,
@@ -1233,7 +1280,7 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows.append(row)
   write_target_rows(root, target_rows)
   write_rows(root, rows)
-  print(f"activated {args.idea_id} from {lesson.get('id')}")
+  print(f"activated {idea_id} from {lesson.get('id')} target={target_id}")
   return 0
 
 
@@ -1496,11 +1543,11 @@ def build_parser() -> argparse.ArgumentParser:
   p_activate.add_argument("--target")
   p_activate.add_argument("--check-filter")
   p_activate.add_argument("--artifact")
-  p_activate.add_argument("--target-id", required=True)
-  p_activate.add_argument("--target-title", required=True)
-  p_activate.add_argument("--idea-id", required=True)
-  p_activate.add_argument("--idea-title", required=True)
-  p_activate.add_argument("--effect", required=True)
+  p_activate.add_argument("--target-id")
+  p_activate.add_argument("--target-title")
+  p_activate.add_argument("--idea-id")
+  p_activate.add_argument("--idea-title")
+  p_activate.add_argument("--effect")
   p_activate.add_argument("--owner")
   p_activate.add_argument("--check", action="append")
   p_activate.add_argument("--review-cadence", default="weekly")
