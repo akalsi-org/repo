@@ -771,6 +771,58 @@ class IdeasCliTest(unittest.TestCase):
     self.assertIn("next_bet_candidate: source=archived-outcomes target=learning-ledger owner=ideas", proc.stdout)
     self.assertIn("action=add learning ledger from archived outcomes and reviews", proc.stdout)
 
+  def test_report_prefers_learning_ledger_receipt_with_evidence(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_ready_bet",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "source",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas report --cost",
+          "lesson": "operators need one cited run-now bet from repo truth",
+          "follow_up": "emit one evidence-backed next bet receipt from learning ledger rows",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn(
+      "next_bet_candidate: source=lesson_ready_bet target=smooth-execution owner=ideas score=",
+      proc.stdout,
+    )
+    self.assertIn("check=./repo.sh ideas report --cost", proc.stdout)
+    self.assertIn(
+      "action=emit one evidence-backed next bet receipt from learning ledger rows",
+      proc.stdout,
+    )
+    self.assertIn(
+      "next_bet_evidence: artifact=tools/ideas.py lesson=operators need one cited run-now bet from repo truth",
+      proc.stdout,
+    )
+
+  def test_report_does_not_fallback_to_learning_ledger_after_ledger_exists(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_one",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "source",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas report --cost",
+          "lesson": "keep learning ledger narrow",
+          "follow_up": "keep the current report shape",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertNotIn("next_bet_candidate:", proc.stdout)
+
   def test_sync_learning_ledger_writes_archived_review_rows(self) -> None:
     archived_targets = [
       {

@@ -490,6 +490,13 @@ def _follow_up_text(row: dict[str, object]) -> str | None:
   return follow_up.strip()
 
 
+def _learning_follow_up_text(row: Mapping[str, object]) -> str | None:
+  follow_up = row.get("follow_up")
+  if not isinstance(follow_up, str) or not follow_up.strip():
+    return None
+  return follow_up.strip()
+
+
 def _text_tokens(text: str) -> set[str]:
   return {
     token
@@ -515,6 +522,12 @@ def next_bet_follow_up_score(row: dict[str, object]) -> int:
   follow_up = _follow_up_text(row)
   if follow_up is None:
     return -99
+  return next_bet_follow_up_score_text(follow_up)
+
+
+def next_bet_follow_up_score_text(follow_up: str | None) -> int:
+  if follow_up is None:
+    return -99
   lowered = follow_up.lower()
   score = 0
   if lowered.startswith("next "):
@@ -534,10 +547,86 @@ def next_bet_follow_up_score(row: dict[str, object]) -> int:
   return score
 
 
+def _follow_up_already_addressed_text(
+    follow_up: str | None,
+    *,
+    reviewed_at: datetime | None,
+    source_id: object,
+    rows: list[dict[str, object]],
+) -> bool:
+  if follow_up is None or reviewed_at is None:
+    return False
+  tokens = _text_tokens(follow_up)
+  if len(tokens) < 2:
+    return False
+  for other in rows:
+    if other.get("id") == source_id:
+      continue
+    other_time = _row_timestamp(other)
+    if other_time is None or other_time < reviewed_at:
+      continue
+    if other.get("state") not in ACTIVE_STATES | {"done"}:
+      continue
+    haystack = " ".join(
+      str(other.get(field, ""))
+      for field in ("id", "title", "effect", "notes")
+    )
+    if len(tokens & _text_tokens(haystack)) >= 2:
+      return True
+  return False
+
+
+def learning_next_bet_candidate(
+    rows: list[dict[str, object]],
+    learning_rows: list[dict[str, object]],
+) -> dict[str, object] | None:
+  candidates: list[tuple[int, str, dict[str, object]]] = []
+  for row in learning_rows:
+    follow_up = _learning_follow_up_text(row)
+    reviewed_at = row.get("reviewed_at")
+    if not isinstance(reviewed_at, str) or not reviewed_at:
+      continue
+    score = next_bet_follow_up_score_text(follow_up)
+    if score <= 1:
+      continue
+    try:
+      reviewed_time = datetime.fromisoformat(reviewed_at)
+    except ValueError:
+      continue
+    if _follow_up_already_addressed_text(
+        follow_up,
+        reviewed_at=reviewed_time,
+        source_id=row.get("source_idea"),
+        rows=rows,
+    ):
+      continue
+    candidates.append((score, reviewed_at, row))
+  if not candidates:
+    return None
+  score, reviewed_at, row = max(
+    candidates,
+    key=lambda item: (item[0], item[1], str(item[2].get("id"))),
+  )
+  return {
+    "source_id": str(row.get("id")),
+    "source_target": str(row.get("target_id")),
+    "owner": str(row.get("facet")),
+    "score": score,
+    "reviewed_at": reviewed_at,
+    "action": _learning_follow_up_text(row) or "",
+    "check": str(row.get("check") or ""),
+    "lesson": str(row.get("lesson") or ""),
+    "source_artifact": str(row.get("source_artifact") or ""),
+  }
+
+
 def next_bet_candidate(
     rows: list[dict[str, object]],
     ledger: TargetLedger,
+    learning_rows: list[dict[str, object]] | None = None,
 ) -> dict[str, object] | None:
+  if learning_rows is not None:
+    return learning_next_bet_candidate(rows, learning_rows)
   archived_targets = {target.id for target in ledger.ordered if target.status == "archived"}
   archived_reviewed: list[tuple[datetime, dict[str, object]]] = []
   candidates: list[tuple[int, datetime, dict[str, object]]] = []
@@ -588,29 +677,12 @@ def follow_up_already_addressed(
     row: dict[str, object],
     rows: list[dict[str, object]],
 ) -> bool:
-  follow_up = _follow_up_text(row)
-  reviewed_at = _reviewed_at(row)
-  if follow_up is None or reviewed_at is None:
-    return False
-  source_id = row.get("id")
-  tokens = _text_tokens(follow_up)
-  if len(tokens) < 2:
-    return False
-  for other in rows:
-    if other.get("id") == source_id:
-      continue
-    other_time = _row_timestamp(other)
-    if other_time is None or other_time < reviewed_at:
-      continue
-    if other.get("state") not in ACTIVE_STATES | {"done"}:
-      continue
-    haystack = " ".join(
-      str(other.get(field, ""))
-      for field in ("id", "title", "effect", "notes")
-    )
-    if len(tokens & _text_tokens(haystack)) >= 2:
-      return True
-  return False
+  return _follow_up_already_addressed_text(
+    _follow_up_text(row),
+    reviewed_at=_reviewed_at(row),
+    source_id=row.get("id"),
+    rows=rows,
+  )
 
 
 def validate_row(
@@ -986,7 +1058,11 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   target_lines = target_summary_rows(rows, ledger, now=now)
   unused_targets = unused_active_targets(rows, ledger)
   learning_rows = load_learning_ledger_rows(root)
-  candidate = next_bet_candidate(rows, ledger)
+  candidate = next_bet_candidate(
+    rows,
+    ledger,
+    learning_rows if learning_ledger_path(root).is_file() else None,
+  )
   print(f"ideas: {len(rows)}")
   print(f"validation_issues: {len(issues)}")
   print(f"stale: {len(stale)}")
@@ -1020,8 +1096,15 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
       "next_bet_candidate: "
       f"source={candidate['source_id']} target={candidate['source_target']} "
       f"owner={candidate['owner']} score={candidate['score']} "
-      f"reviewed_at={candidate['reviewed_at']} action={candidate['action']}"
+      f"reviewed_at={candidate['reviewed_at']} check={candidate.get('check', '')} "
+      f"action={candidate['action']}"
     )
+    if candidate.get("lesson"):
+      print(
+        "  next_bet_evidence: "
+        f"artifact={candidate.get('source_artifact', '')} "
+        f"lesson={candidate['lesson']}"
+      )
   if args.cost:
     risky = cost_risk_rows(rows)
     print(f"cost_risks: {len(risky)}")
