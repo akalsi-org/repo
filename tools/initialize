@@ -38,6 +38,9 @@ IDEAS_PATH = REPO_ROOT / ".agents" / "ideas" / "ideas.jsonl"
 ADR_DIR = REPO_ROOT / "docs" / "adr"
 ADR_INDEX = ADR_DIR / "index.md"
 FIRST_ADR = ADR_DIR / "0001_template_adoption.md"
+FORK_PLAYBOOK_PATH = REPO_ROOT / "docs" / "FORK_ADOPTION_PLAYBOOK.md"
+OWNERSHIP_TEMPLATE_PATH = REPO_ROOT / ".agents" / "facet" / "OWNERSHIP.md.template"
+ROOT_FACET_OWNERSHIP_PATH = REPO_ROOT / ".agents" / "facet" / "root" / "OWNERSHIP.md"
 
 POLYFORM_STRICT_HEADER = "# PolyForm Strict License 1.0.0"
 POLYFORM_STRICT_URL = "https://polyformproject.org/licenses/strict/1.0.0"
@@ -218,6 +221,13 @@ because {knobs['name']} is intended for sale; permissive licenses
         FIRST_ADR.write_text(body)
 
 
+def inherit_root_facet_ownership() -> None:
+    if OWNERSHIP_TEMPLATE_PATH.exists() and not ROOT_FACET_OWNERSHIP_PATH.exists():
+        ROOT_FACET_OWNERSHIP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        template_body = OWNERSHIP_TEMPLATE_PATH.read_text()
+        ROOT_FACET_OWNERSHIP_PATH.write_text(template_body)
+
+
 def seed_operating_pack(knobs: dict) -> None:
     if not TARGETS_PATH.exists():
         TARGETS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -346,6 +356,7 @@ def main() -> int:
     seed_context(knobs)
     seed_first_adr(knobs)
     seed_operating_pack(knobs)
+    inherit_root_facet_ownership()
 
     repo_sh = str(REPO_ROOT / "repo.sh")
     run([repo_sh, "setup"], check=False)
@@ -363,6 +374,8 @@ def main() -> int:
     print(f"  adr index:     {ADR_INDEX}")
     for line in next_bet_receipt():
         print(line)
+    print()
+    print(f"  governance:    Next → read docs/FORK_ADOPTION_PLAYBOOK.md to inherit governance")
     return 0
 
 

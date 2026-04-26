@@ -233,6 +233,53 @@ class FacetsTest(FixtureCase):
     with self.assertRaisesRegex(ValueError, "docs.projection"):
       load_facets(self.root)
 
+  def test_consider_owns_overlap_fails_loudly(self) -> None:
+    write(
+      self.root / ".agents/facet/docs/facet.json",
+      """
+      {
+        "name": "docs",
+        "description": "docs",
+        "owns": ["docs/**"],
+        "consider": [
+          {
+            "paths": ["docs/**"],
+            "reason": "May affect docs."
+          }
+        ],
+        "commands": [],
+        "checks": [],
+        "docs": []
+      }
+      """,
+    )
+    from tools.facets import facet_consideration_conflicts
+    conflicts = facet_consideration_conflicts(self.root)
+    self.assertTrue(any("both owns and consider" in c for c in conflicts))
+
+  def test_consider_owns_conflict_detected_by_build_report(self) -> None:
+    write(
+      self.root / ".agents/facet/docs/facet.json",
+      """
+      {
+        "name": "docs",
+        "description": "docs",
+        "owns": ["docs/**"],
+        "consider": [
+          {
+            "paths": ["docs/**"],
+            "reason": "May affect docs."
+          }
+        ],
+        "commands": [],
+        "checks": [],
+        "docs": []
+      }
+      """,
+    )
+    report = build_report(self.root)
+    self.assertTrue(any("both owns and consider" in s for s in report.stale))
+
 
 if __name__ == "__main__":
   unittest.main()

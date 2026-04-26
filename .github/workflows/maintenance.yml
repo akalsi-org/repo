@@ -32,5 +32,11 @@ jobs:
       - name: Agent stale-doc check
         run: ./repo.sh agent_check --stale-only
 
+      - name: Skill gate audit
+        continue-on-error: true
+        run: |
+          echo "=== Skill Gate Audit ===" 
+          ./repo.sh agent_check 2>&1 | grep STALE_SKILL_GATES || echo "No stale skill gates found."
+
       - name: Backlog hygiene report
         run: ./repo.sh ideas report --cost

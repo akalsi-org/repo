@@ -290,12 +290,26 @@ def _load_facet(manifest: pathlib.Path) -> Facet:
   )
 
 
+def _validate_facet_dedup(facet: Facet) -> None:
+  """Check that facet does not have overlapping owns and consider.paths."""
+  owns_set = {pattern for pattern in facet.owns}
+  for consideration in facet.consider:
+    for consider_path in consideration.paths:
+      if consider_path in owns_set:
+        raise ValueError(
+          f"{facet.path}:owns and consider have overlapping path `{consider_path}` "
+          f"in facet `{facet.name}` — remove from one list"
+        )
+
+
 def load_facets(root: pathlib.Path) -> list[Facet]:
   facets_dir = root / FACETS_DIR_REL
   if not facets_dir.exists():
     return []
 
   facets = [_load_facet(manifest) for manifest in sorted(facets_dir.glob("*/facet.json"))]
+  
+  # Validate command uniqueness
   command_owner: dict[str, pathlib.Path] = {}
   for facet in facets:
     for command in facet.commands:
@@ -305,7 +319,71 @@ def load_facets(root: pathlib.Path) -> list[Facet]:
           f"{facet.path}:commands.name `{command.name}` already declared by {previous}"
         )
       command_owner[command.name] = facet.path
+  
   return facets
+
+
+def facet_orphan_paths(root: pathlib.Path) -> list[str]:
+  """Check for paths owned by facets that don't match actual files or directories.
+  
+  Returns list of error messages describing orphan patterns.
+  """
+  facets = load_facets(root)
+  errors: list[str] = []
+  
+  # Build set of all known files and directories
+  all_paths: set[str] = set()
+  for item in root.rglob("*"):
+    if item.is_file() or item.is_dir():
+      rel_path = item.relative_to(root).as_posix()
+      all_paths.add(rel_path)
+      # Add parent directories
+      for parent in pathlib.Path(rel_path).parents:
+        if str(parent) != ".":
+          all_paths.add(str(parent))
+  
+  # Check each facet's owns patterns
+  for facet in facets:
+    orphan_owns: list[str] = []
+    for owns_pattern in facet.owns:
+      # Check if this pattern matches any actual paths
+      matched = any(
+        glob_match(path, owns_pattern) for path in all_paths
+      )
+      # Skip patterns with ** or wildcards - they're too generic to validate
+      if not matched and "**" not in owns_pattern and "*" not in owns_pattern:
+        orphan_owns.append(owns_pattern)
+    
+    if orphan_owns:
+      facet_name = facet.name or facet.key
+      orphan_list = ", ".join(f"`{p}`" for p in orphan_owns)
+      errors.append(
+        f"facet `{facet_name}` owns {orphan_list} but these paths don't exist on disk"
+      )
+  
+  return errors
+
+
+def facet_consideration_conflicts(root: pathlib.Path) -> list[str]:
+  """Check for paths in both 'owns' and 'consider' lists within a single facet.
+  
+  Returns list of error messages describing conflicts.
+  """
+  facets = load_facets(root)
+  errors: list[str] = []
+  
+  for facet in facets:
+    owns_set = set(facet.owns)
+    for consideration in facet.consider:
+      for consider_path in consideration.paths:
+        if consider_path in owns_set:
+          facet_name = facet.name or facet.key
+          errors.append(
+            f"facet `{facet_name}`: path `{consider_path}` in both owns and consider — "
+            f"remove from one"
+          )
+  
+  return errors
 
 
 def _match_segments(parts: list[str], pat_parts: list[str]) -> bool:
