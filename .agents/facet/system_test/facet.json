@@ -1,0 +1,42 @@
+{
+  "name": "system_test",
+  "description": "Repo-level manifest-driven clustered system-test harness with plain and bwrap backends.",
+  "owns": [
+    "tools/system_test",
+    "tools/system_test_tests/**",
+    ".agents/facet/system_test/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        "bootstrap/tools/bwrap.sh",
+        "bootstrap/fetch_alpine_bwrap.sh",
+        ".agents/facet/bootstrap/facet.json"
+      ],
+      "skills": [
+        "bootstrap-toolchain",
+        "cache-hygiene"
+      ],
+      "reason": "Bwrap bootstrap changes can affect the sandbox backend."
+    }
+  ],
+  "commands": [
+    {
+      "name": "system_test",
+      "purpose": "Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest."
+    }
+  ],
+  "checks": [
+    {
+      "name": "system_test",
+      "command": "./repo.sh system_test",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "commands"
+    }
+  ]
+}

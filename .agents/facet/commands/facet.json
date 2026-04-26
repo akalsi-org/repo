@@ -1,0 +1,52 @@
+{
+  "name": "commands",
+  "description": "Top-level commands exposed through ./repo.sh.",
+  "owns": [
+    "repo.sh",
+    "tools/agent_check",
+    "tools/agent_check.py",
+    "tools/agent_check_tests/**",
+    "tools/facets.py",
+    "tools/bin/**",
+    ".agents/facet/commands/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/facet/**"
+      ],
+      "skills": [
+        "doc-sync"
+      ],
+      "reason": "Facet manifests can affect command inventory and ownership reports."
+    }
+  ],
+  "commands": [
+    {
+      "name": "agent_check",
+      "purpose": "Validate skill routing, doc references, and Facet-backed command inventory."
+    }
+  ],
+  "checks": [
+    {
+      "name": "agent_check_stale",
+      "command": "./repo.sh agent_check --stale-only",
+      "closeout": true
+    },
+    {
+      "name": "whitespace",
+      "command": "git diff --check",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "commands"
+    },
+    {
+      "surface": "README.md",
+      "projection": "commands"
+    }
+  ]
+}

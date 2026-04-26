@@ -34,8 +34,10 @@ hyphens; everything else uses underscores (see §6 Naming).
 | `domain-model` | Stress-testing a plan against `CONTEXT.md` and existing ADRs. | `.agents/skills/domain-model/SKILL.md` |
 | `improve-codebase-architecture` | Finding deepening opportunities, consolidating shallow modules. | `.agents/skills/improve-codebase-architecture/SKILL.md` |
 | `decision-record` | A hard-to-reverse, surprising, trade-off-driven call has been made. | `.agents/skills/decision-record/SKILL.md` |
+| `debate-and-decide` | A load-bearing decision has two defensible sides and no existing ADR resolves it. | `.agents/skills/debate-and-decide/SKILL.md` |
 | `grill-me` | Stress-testing a plan via relentless interview. | `.agents/skills/grill-me/SKILL.md` |
 | `ideate` | Generating a horizon-spanning idea portfolio (short / medium / long / visionary) with 1st-/2nd-/3rd-order effect classification. | `.agents/skills/ideate/SKILL.md` |
+| `debate-and-decide` | A load-bearing question is genuinely contested, no ADR resolves it, and at least two defensible positions exist. Two sub-agents argue; parent escalates only preference-shaped cruxes to the user. | `.agents/skills/debate-and-decide/SKILL.md` |
 | `triage-issue` | A bug needs investigation + a TDD fix plan filed as an issue. | `.agents/skills/triage-issue/SKILL.md` |
 | `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
 | `request-refactor-plan` | Detailed refactor plan + tiny commits filed as a GitHub issue. | `.agents/skills/request-refactor-plan/SKILL.md` |
@@ -50,7 +52,13 @@ Agents working in this repository must preserve the template as a
 reusable bootstrap substrate.
 
 - Repository-specific behavior is configured through
-  `.agents/repo.json`, never hard-coded into core scripts or skills.
+  `.agents/repo.json` and declarative `.agents/facet/<name>/facet.json`
+  manifests, never hard-coded into core scripts or skills.
+- Internal repo machinery should use one explicit source of truth and
+  fail loudly when it is missing. Do not add fallback sources unless
+  the user explicitly asks for them. Fallbacks are reserved for
+  released artifacts, production paths, credentials, and cache/mirror
+  accelerators where graceful degradation is part of the contract.
 - `AGENTS.md` is updated when commands, agent assets, hooks,
   integrations, or descriptor rules change.
 - Run `./repo.sh agent_check --stale-only` and `git diff --check`
@@ -79,7 +87,10 @@ steps so failures identify the stage that broke.
 | `docs/adr/NNNN_*.md` | Architectural decision records. Sequential numbering, underscore separator. |
 | `LICENSE` | PolyForm Strict 1.0.0 by default. |
 | `.editorconfig` | Editor baseline; keep when adapting the template. |
-| `.agents/repo.json` | Per-product knobs (name, owner, license year, tooling). |
+| `.agents/repo.json` | Per-product knobs and `facet_config` values. Facet presence, not this file, controls enablement. |
+| `.agents/facet/<name>/facet.json` | Declarative Facet manifests for repo-level AI capabilities: owned paths, commands, checks, and doc projections. |
+| `.agents/facet/root/facet.json` | Root Facet. Display name `/`; owns baseline template substrate and repo-level defaults. |
+| `.agents/facet/system_test/scenarios.json` | System-test scenario manifest. Declares default cluster size and enabled backend checks. |
 | `.agents/skills/<name>/` | Skill bodies. Hyphenated folder names. |
 | `.agents/skills/index.md` | Path-pattern → skill routing table. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |
@@ -87,11 +98,12 @@ steps so failures identify the stage that broke.
 | `.agents/reviews/<skill>.md` | Optional skill-specific review notes. |
 | `bootstrap/fetch_binary.sh` | Generic helper: pinned binary tarball → `.local/toolchain/$REPO_ARCH`. |
 | `bootstrap/fetch_source.sh` | Generic helper: pinned source build. |
-| `bootstrap/tools/<tool>.sh` | Per-tool spec sourcing one helper. |
+| `bootstrap/fetch_alpine_bwrap.sh` | Helper: pinned Alpine minirootfs + bubblewrap apk + libcap apk → bwrap shim. |
+| `bootstrap/tools/<tool>.sh` | Per-tool spec sourcing one helper. Specs may declare `TOOL_DEPS`; `repo.sh` topologically batches them. `python.sh` pins the repo machinery interpreter. |
 | `bootstrap/vars/local_cache_key.sh` | CI cache-key sentinel. Bump `cache_epoch` to invalidate helpers. |
 | `tools/` | Every command exposed via `./repo.sh`. |
 | `tools/git_hooks/pre-commit` | Managed pre-commit hook source. |
-| `.local/toolchain/$REPO_ARCH/` | Toolchain install prefix. Cached, not committed. |
+| `.local/toolchain/$REPO_ARCH/` | Toolchain install prefix, including pinned Python. Cached, not committed. |
 | `.local/stamps/` | Tool install stamps + `initialized` marker. |
 | `.claude/skills`, `.codex/skills`, `.github/instructions/skills` | Symlinks to `.agents/skills/`. Multi-agent surface. |
 
@@ -101,9 +113,10 @@ steps so failures identify the stage that broke.
 |---------|------|---------|
 | `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
-| `agent_check` | Python | Validate skill routing, doc references, and configured command inventory. Rejects `_` in skill folder names. |
+| `agent_check` | Python | Validate skill routing, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
+| `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 
 ## 6. Naming
 
@@ -134,7 +147,23 @@ CI restores `.local/toolchain/` plus `.local/stamps/` with
 `./repo.sh`, and saves those bootstrap paths only from non-PR runs on
 cache misses. Cache keys are scoped by architecture and by
 `bootstrap/vars/local_cache_key.sh`, `.agents/repo.json`, and
-`bootstrap/tools/*.sh`.
+`bootstrap/tools/*.sh`. The bootstrap Facet owns CI workflow cache
+policy and must stay in sync with workflow changes. Repo Python
+commands run through the pinned musl CPython 3.14 installed by
+`bootstrap/tools/python.sh`; its wrapper uses the bootstrapped Alpine
+musl loader from the bwrap bootstrap. `python.sh` declares
+`TOOL_DEPS=(bwrap)`, so `repo.sh` dependency planning runs bwrap before
+Python and the host does not need musl installed. Alpine/static
+product portability is the baseline. CI also runs `./repo.sh system_test`,
+whose base primitive is a three-node cluster. Every node gets the same
+guest service port from the scenario manifest and a distinct cluster
+IP; host-side ports are assigned per node for external reachability
+while guests reach each other directly through cluster IP plus service
+port. The Template smoke test validates that topology without requiring
+live socket binds, using host-global lock-file claims under
+`$REPO_LOCAL/locks/system_test/` for node-name/IP uniqueness. Bwrap
+nodes receive a generated `/etc/hosts` mapping (`node-0`, `node-1`,
+...).
 
 `cache_warm.yml` periodically restores the same cache keys to reset
 GitHub's LRU timer. Restore misses are acceptable and must not fail

@@ -33,6 +33,23 @@ Durable facts in `.agents/kb_src/**/*.jsonl` consumed by the `agent`
 command. Cache and runtime tables are derived from the KB and not
 hand-edited.
 
+**Facet**:
+A repo-level capability bundle under `.agents/facet/<name>/` with a
+`facet.json` manifest. A Facet declares owned paths, top-level
+commands, checks, documentation projections, and other AI-relevant
+repo truth for one capability. Facets are declarative; core tools
+consume them. Presence means enabled.
+
+**Root Facet**:
+The Facet stored at `.agents/facet/root/facet.json` with display name
+`/`. It owns baseline Template substrate and repo-level defaults that
+do not yet belong to a named capability Facet.
+
+**Consideration**:
+A non-owning Facet interest in a path. Considerations provide
+suggested thinking or routing only; they do not add required closeout
+checks.
+
 **Worktree**:
 A git worktree of the bare repo. The Template assumes a
 `.bare/ + worktree/` layout for AI-friendly parallelism, with
@@ -40,8 +57,11 @@ A git worktree of the bare repo. The Template assumes a
 
 **Toolchain**:
 Pinned third-party tools fetched into `.local/toolchain/$REPO_ARCH/`
-by per-tool specs under `bootstrap/tools/`. Never the system package
-manager.
+by per-tool specs under `bootstrap/tools/`. Specs may declare
+dependencies on other specs; `repo.sh` turns those declarations into
+dependency-ready batches. Never the system package manager. Repo
+machinery runs on pinned musl CPython 3.14 installed there by
+`bootstrap/tools/python.sh`.
 
 **Subsystem**:
 A coherent slice of the Product with its own `AGENTS.md` row and
@@ -53,7 +73,13 @@ subsystems.
 - A **Template** produces one or more **Products**.
 - A **Product** has many **Skills** (mostly inherited from the
   Template).
+- A **Product** has many **Facets** (mostly inherited from the
+  Template).
 - An **Agent** consumes **Skills** + the **KB** + `AGENTS.md`.
+- Core tools consume **Facets** to derive command inventory, ownership,
+  checks, and documentation expectations.
+- Each path has one primary owner **Facet**. Other **Facets** may
+  declare **Considerations**.
 - A **Toolchain** is shared by all **Worktrees** of a **Product**.
 
 ## Flagged ambiguities

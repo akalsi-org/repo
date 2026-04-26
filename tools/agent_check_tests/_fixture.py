@@ -84,11 +84,32 @@ body
 
 REPO_JSON = """
 {
-  "commands": ["sample-tool"],
-  "command_table": "AGENTS.md",
-  "subsystem_descriptor_globs": ["src/*/module.toml"],
-  "source_mirror_repo": null,
-  "bootstrap_artifacts": []
+  "facet_config": {
+    "root": {
+      "subsystem_descriptor_globs": ["src/*/module.toml"]
+    },
+    "git_hooks": {
+      "vscode_extensions": []
+    },
+    "bootstrap": {
+      "source_mirror_repo": null,
+      "bootstrap_artifacts": []
+    }
+  }
+}
+"""
+
+
+COMMANDS_FACET = """
+{
+  "name": "commands",
+  "description": "Top-level commands",
+  "owns": ["tools/**"],
+  "commands": [
+    {"name": "sample-tool", "purpose": "does foo"}
+  ],
+  "checks": [],
+  "docs": []
 }
 """
 
@@ -104,6 +125,7 @@ class TempRepo:
   def _init_minimal(self) -> None:
     write(self.root / "AGENTS.md", AGENTS_MD)
     write(self.root / ".agents/repo.json", REPO_JSON)
+    write(self.root / ".agents/facet/commands/facet.json", COMMANDS_FACET)
     write(self.root / ".agents/skills/index.md", SKILL_INDEX)
     write(self.root / ".agents/skills/doc-sync/SKILL.md", DOC_SYNC_SKILL)
     write(self.root / "tools/sample-tool", "#!/bin/sh\nexit 0\n")

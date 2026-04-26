@@ -1,0 +1,43 @@
+{
+  "name": "git_hooks",
+  "description": "Managed git hook and editor-extension setup behavior.",
+  "owns": [
+    "tools/setup",
+    "tools/git_hooks/**",
+    ".agents/facet/git_hooks/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/repo.json"
+      ],
+      "skills": [
+        "doc-sync"
+      ],
+      "reason": "VSCode extension setup configuration lives in repo config."
+    }
+  ],
+  "commands": [
+    {
+      "name": "setup",
+      "purpose": "Install / status / uninstall managed git hooks and configured VSCode plugins."
+    }
+  ],
+  "checks": [
+    {
+      "name": "setup_status",
+      "command": "./repo.sh setup --status",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "integrations"
+    },
+    {
+      "surface": "README.md",
+      "projection": "integrations"
+    }
+  ]
+}

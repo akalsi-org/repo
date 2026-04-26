@@ -4,5 +4,5 @@
 # this file focused on changes that should invalidate reusable bootstrap state.
 # Editing command dispatch, docs, hooks, or messages should not cold-start CI.
 
-cache_epoch=1
+cache_epoch=4
 bootstrap_artifact_format=1

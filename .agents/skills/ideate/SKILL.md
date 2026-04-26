@@ -19,7 +19,7 @@ that collapse.
 - After `grill-me` or `domain-model` resolves a load-bearing call —
   use ideate to populate what comes next.
 
-## Two axes
+## Core axes
 
 ### Axis 1 — Time horizon
 
@@ -55,6 +55,38 @@ Rules:
 - Order ≠ time. A 1st-order effect at the visionary horizon is still
   1st-order. Don't conflate horizon and order.
 
+## Optional evaluation axes
+
+When the user asks to compare, rank, prioritize, classify, or sharpen
+ideas, add a compact scoring pass after classification. Keep scores
+directional; false precision is worse than no score.
+
+Use `H/M/L` by default:
+
+| Axis | High means | Watch for |
+|------|------------|-----------|
+| **Return** | Large upside if it works: leverage, revenue, learning, moat, or future optionality. | Calling an idea high-return without naming the mechanism. |
+| **Time sink** | Large elapsed time or attention drain before useful feedback. | Ideas that look cheap but require repeated coordination. |
+| **Go-live cost** | Expensive first release: infra, migration, tooling, docs, support, launch risk. | Hidden activation work after code is merged. |
+| **Maintenance overhead** | Ongoing cost to keep it correct, useful, secure, and documented. | Load-bearing automation, stale generated output, or human-only rituals. |
+| **Reversibility** | Easy to unwind without breaking users, docs, or Product forks. | Naming or layout choices that become contracts. |
+| **Strategic fit** | Strongly reinforces the product identity and constraints already documented. | Cool ideas that stretch the domain language or reopen settled ADRs. |
+
+For larger portfolios, include one more column:
+
+| Verdict | Meaning |
+|---------|---------|
+| **Do now** | High return, low-to-medium cost, clear next action. |
+| **Design first** | Promising but interface, ownership, or migration shape is unclear. |
+| **Watch** | Interesting, but timing or evidence is weak. |
+| **Avoid** | Cost, maintenance, or contradiction overwhelms upside. |
+
+These axes are intentionally extensible. If the user's domain needs a
+different lens, add a named temporary lens in the report, such as
+`Regulatory exposure`, `Support burden`, `User trust`, `Data gravity`,
+or `Distribution leverage`. Do not permanently expand this skill for
+one-off lenses unless they recur across sessions.
+
 ## Process
 
 ### 1. Frame
@@ -79,7 +111,18 @@ For every idea, write its 1st-order and 2nd-order effects. Add 3rd
 order only when you can name a specific systemic mechanism, not a
 vibes statement.
 
-### 4. Pressure test
+### 4. Score if requested
+
+If the user asked for ranking, filtering, prioritization, cost
+classification, or "best bets," score ideas against the optional
+evaluation axes. Use `H/M/L`, plus a one-clause reason for any
+surprising score. Prefer a table after the effect chains rather than
+stuffing scores into each idea.
+
+Do not let scoring replace effect chains. Scores summarize judgment;
+they do not explain it.
+
+### 5. Pressure test
 
 Walk each idea against:
 
@@ -94,14 +137,19 @@ Walk each idea against:
 - Cache-hygiene + cost-cheap principles — does it require always-on
   paid infrastructure when an off-by-default alternative exists?
 
-### 5. Recommend a portfolio
+### 6. Recommend a portfolio
 
 Pick a small set the user can actually carry: typically **2 short,
 1–2 medium, 1 long, 1 visionary**. State why each made the cut and
 what it depends on. Be opinionated — a menu without a recommendation
 is half the work.
 
-### 6. Offer next steps
+If scoring was requested, use the scores to justify the portfolio.
+Explicitly call out any high-return idea you are not recommending
+because it is a time sink, expensive to launch, high-maintenance, or
+strategically distracting.
+
+### 7. Offer next steps
 
 For each chosen item, offer the right follow-up skill:
 
@@ -159,6 +207,16 @@ Default report layout:
 - <item> → `<skill>` to <action>
 ```
 
+When ranking was requested, add:
+
+```
+## Evaluation
+
+| Idea | Return | Time sink | Go-live cost | Maintenance | Reversibility | Strategic fit | Verdict |
+|------|--------|-----------|--------------|-------------|---------------|---------------|---------|
+| <idea> | H/M/L | H/M/L | H/M/L | H/M/L | H/M/L | H/M/L | Do now / Design first / Watch / Avoid |
+```
+
 For brief sessions, the user can ask for "just the matrix" — a 4x3
 table with horizon rows and 1st/2nd/3rd columns. Default is the full
 layout.
@@ -179,6 +237,11 @@ layout.
 - **Ignoring existing ADRs.** Re-suggesting something an ADR
   rejected, without acknowledging the ADR, wastes the user's time
   and corrodes trust in the skill.
+- **Spreadsheet theater.** Scores without mechanisms create fake
+  confidence. Every surprising `H` or `L` needs a reason.
+- **Tool sprawl by brainstorm.** Do not create a new permanent
+  ideation axis for a one-time concern. Treat lenses as local unless
+  they recur.
 
 ## Read first
 

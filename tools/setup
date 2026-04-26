@@ -38,20 +38,30 @@ def repo_config() -> dict[str, object]:
   return raw
 
 
+def facet_config(name: str) -> dict[str, object]:
+  raw = repo_config().get("facet_config", {})
+  if not isinstance(raw, dict):
+    raise SystemExit("facet_config must be an object")
+  value = raw.get(name, {})
+  if not isinstance(value, dict):
+    raise SystemExit(f"facet_config.{name} must be an object")
+  return value
+
+
 def vscode_extensions() -> list[dict[str, pathlib.Path]]:
-  raw = repo_config().get("vscode_extensions", [])
+  raw = facet_config("git_hooks").get("vscode_extensions", [])
   if raw is None:
     return []
   if not isinstance(raw, list):
-    raise SystemExit("vscode_extensions must be a list")
+    raise SystemExit("facet_config.git_hooks.vscode_extensions must be a list")
   out: list[dict[str, pathlib.Path]] = []
   for item in raw:
     if not isinstance(item, dict):
-      raise SystemExit("vscode_extensions entries must be objects")
+      raise SystemExit("facet_config.git_hooks.vscode_extensions entries must be objects")
     name = item.get("name")
     path = item.get("path")
     if not isinstance(name, str) or not isinstance(path, str):
-      raise SystemExit("vscode_extensions entries need name and path")
+      raise SystemExit("facet_config.git_hooks.vscode_extensions entries need name and path")
     out.append({"name": name, "path": (ROOT / path).resolve()})
   return out
 

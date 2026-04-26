@@ -1,8 +1,14 @@
 {
-  "commands": ["agent", "agent_check", "initialize", "setup", "source_mirror"],
-  "command_table": "AGENTS.md",
-  "subsystem_descriptor_globs": [],
-  "vscode_extensions": [],
-  "source_mirror_repo": null,
-  "bootstrap_artifacts": []
+  "facet_config": {
+    "root": {
+      "subsystem_descriptor_globs": []
+    },
+    "git_hooks": {
+      "vscode_extensions": []
+    },
+    "bootstrap": {
+      "source_mirror_repo": null,
+      "bootstrap_artifacts": []
+    }
+  }
 }

@@ -38,7 +38,7 @@ jobs:
           path: |
             .local/toolchain
             .local/stamps
-          key: repo_bootstrap_${{ matrix.arch }}_${{ hashFiles('bootstrap/vars/local_cache_key.sh', '.agents/repo.json') }}
+          key: repo_bootstrap_${{ matrix.arch }}_${{ hashFiles('bootstrap/vars/local_cache_key.sh', '.agents/repo.json', 'bootstrap/tools/*.sh') }}
           restore-keys: |
             repo_bootstrap_${{ matrix.arch }}_
 

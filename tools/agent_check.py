@@ -16,6 +16,8 @@ Public surface:
   ``{patterns, skills, note}`` records.
 - ``route_advice(root, paths)`` — applies routes to a path list and returns
   ``(skills, notes, closeout_checks)``.
+- ``ownership_issues(root, paths)`` — reports changed paths with zero or
+  multiple primary owner Facets.
 - ``stale_doc_issues(root)`` — bidirectional checks across AGENTS.md,
   SKILL.md frontmatter, the skill index, the tool/subsystem inventory, and
   any plan-file references.
@@ -32,6 +34,11 @@ import re
 import subprocess
 from dataclasses import dataclass
 
+from tools.facets import closeout_checks as facet_closeout_checks
+from tools.facets import command_names as facet_command_names
+from tools.facets import consideration_notes as facet_consideration_notes
+from tools.facets import ownership_issues
+
 
 SKILL_INDEX_REL = ".agents/skills/index.md"
 SKILLS_DIR_REL = ".agents/skills"
@@ -45,6 +52,7 @@ class Report:
   skills: list[str]
   notes: list[str]
   closeout: list[str]
+  ownership: list[str]
   stale: list[str]
 
   @property
@@ -233,6 +241,19 @@ def _repo_config(root: pathlib.Path) -> dict[str, object]:
   return raw
 
 
+def _facet_config(
+    config: dict[str, object],
+    facet: str,
+) -> dict[str, object]:
+  raw = config.get("facet_config", {})
+  if not isinstance(raw, dict):
+    raise ValueError(f"{REPO_CONFIG_REL}:facet_config must be object")
+  value = raw.get(facet, {})
+  if not isinstance(value, dict):
+    raise ValueError(f"{REPO_CONFIG_REL}:facet_config.{facet} must be object")
+  return value
+
+
 def _str_list(raw: object, *, field: str) -> list[str]:
   if raw is None:
     return []
@@ -296,11 +317,12 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
           f".agents/skills/index.md references unknown skill `{sn}`"
         )
 
-  for command in sorted(_str_list(config.get("commands"), field="commands")):
+  configured_commands = facet_command_names(root)
+  for command in configured_commands:
     tool = root / "tools" / command
     if not tool.is_file():
       issues.append(
-        f"{REPO_CONFIG_REL} lists command `{command}` but tools/{command} not found"
+        f".agents/facet/*/facet.json lists command `{command}` but tools/{command} not found"
       )
       continue
     if f"`{command}`" not in agents:
@@ -308,14 +330,15 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
 
   section_8 = _section(agents, r"## 8\.")
   for tn in sorted(set(re.findall(r"`([a-z][a-z0-9_-]*)`", section_8))):
-    if tn not in _str_list(config.get("commands"), field="commands"):
+    if tn not in configured_commands:
       issues.append(
-        f"AGENTS.md §8 lists command `{tn}` but {REPO_CONFIG_REL} does not"
+        f"AGENTS.md §8 lists command `{tn}` but .agents/facet/*/facet.json does not"
       )
 
+  root_config = _facet_config(config, "root")
   descriptor_globs = _str_list(
-    config.get("subsystem_descriptor_globs"),
-    field="subsystem_descriptor_globs",
+    root_config.get("subsystem_descriptor_globs"),
+    field="facet_config.root.subsystem_descriptor_globs",
   )
   for pattern in descriptor_globs:
     for descriptor in sorted(root.glob(pattern)):
@@ -369,12 +392,18 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
 def build_report(root: pathlib.Path) -> Report:
   paths = changed_paths(root)
   skills, notes, checks = route_advice(root, paths)
-  closeout = sorted(checks | {"git diff --check", "./repo.sh agent_check"})
+  notes.extend(facet_consideration_notes(root, paths))
+  closeout = sorted(
+    checks
+    | set(facet_closeout_checks(root, paths))
+    | {"git diff --check", "./repo.sh agent_check"}
+  )
   return Report(
     paths=paths,
     skills=sorted(skills),
     notes=notes,
     closeout=closeout,
+    ownership=ownership_issues(root, paths),
     stale=stale_doc_issues(root),
   )
 
@@ -401,6 +430,8 @@ def render_report(root: pathlib.Path, report: Report) -> str:
     "",
     _render_list("suggested closeout checks:", report.closeout),
     "",
+    _render_list("facet ownership issues:", report.ownership),
+    "",
     _render_list("stale-doc issues:", report.stale),
   ]
   return "\n".join(parts) + "\n"
@@ -424,9 +455,10 @@ def main(argv: list[str] | None = None) -> int:
   report = build_report(root)
   if args.stale_only:
     print(_render_list("stale-doc issues:", report.stale))
+    return 1 if report.stale else 0
   else:
     print(render_report(root, report), end="")
-  return 1 if report.stale else 0
+  return 0 if report.is_clean else 1
 
 
 if __name__ == "__main__":

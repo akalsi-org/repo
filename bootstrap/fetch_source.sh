@@ -27,6 +27,7 @@
 set -euo pipefail
 
 : "${REPO_ROOT:?REPO_ROOT must be set; source this from ./repo.sh}"
+: "${REPO_LOCAL:?REPO_LOCAL must be set; source this from ./repo.sh}"
 : "${REPO_TOOLCHAIN:?REPO_TOOLCHAIN must be set; source this from ./repo.sh}"
 : "${REPO_ARCH:?REPO_ARCH must be set; source this from ./repo.sh}"
 : "${TOOL_NAME:?per-tool spec must set TOOL_NAME}"
@@ -40,19 +41,19 @@ if [[ -z "${TOOL_BUILD_CMDS+x}" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
-stamp="$REPO_ROOT/.local/stamps/${TOOL_NAME}_${TOOL_VERSION}_${REPO_ARCH}"
+stamp="$REPO_LOCAL/stamps/${TOOL_NAME}_${TOOL_VERSION}_${REPO_ARCH}"
 if [[ -f "$stamp" ]]; then
-  printf '%s: cached (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH"
+  printf '%s: cached (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH" >&2
   return 0 2>/dev/null || exit 0
 fi
 
-mkdir -p "$REPO_TOOLCHAIN" "$REPO_ROOT/.local/stamps"
+mkdir -p "$REPO_TOOLCHAIN" "$REPO_LOCAL/stamps"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' RETURN EXIT
 
 archive="$scratch/${TOOL_NAME}.tar.gz"
-printf '%s: fetching source %s\n' "$TOOL_NAME" "$TOOL_SRC_URL"
+printf '%s: fetching source %s\n' "$TOOL_NAME" "$TOOL_SRC_URL" >&2
 if ! curl -fsSL --retry 3 --retry-delay 2 -o "$archive" "$TOOL_SRC_URL"; then
   printf '%s: source fetch failed (%s)\n' "$TOOL_NAME" "$TOOL_SRC_URL" >&2
   return 1 2>/dev/null || exit 1
@@ -82,7 +83,7 @@ fi
 (
   cd "$build_dir"
   for cmd in "${TOOL_BUILD_CMDS[@]}"; do
-    printf '%s: $ %s\n' "$TOOL_NAME" "$cmd"
+    printf '%s: $ %s\n' "$TOOL_NAME" "$cmd" >&2
     eval "$cmd"
   done
 )
@@ -92,7 +93,7 @@ if [[ -n "${TOOL_PRUNE_PATHS+x}" ]]; then
     [[ -z "$p" ]] && continue
     target="$REPO_TOOLCHAIN/$p"
     if [[ -e "$target" || -L "$target" ]]; then
-      printf '%s: pruning %s\n' "$TOOL_NAME" "$p"
+      printf '%s: pruning %s\n' "$TOOL_NAME" "$p" >&2
       rm -rf "$target"
     fi
   done
@@ -108,4 +109,4 @@ fi
 chmod +x "$target_bin"
 
 printf '%s\n' "$TOOL_VERSION" > "$stamp"
-printf '%s: built (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH"
+printf '%s: built (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH" >&2

@@ -30,14 +30,15 @@
 set -euo pipefail
 
 : "${REPO_ROOT:?REPO_ROOT must be set; source this from ./repo.sh}"
+: "${REPO_LOCAL:?REPO_LOCAL must be set; source this from ./repo.sh}"
 : "${REPO_TOOLCHAIN:?REPO_TOOLCHAIN must be set; source this from ./repo.sh}"
 : "${REPO_ARCH:?REPO_ARCH must be set; source this from ./repo.sh}"
 : "${TOOL_NAME:?per-tool spec must set TOOL_NAME}"
 : "${TOOL_VERSION:?per-tool spec must set TOOL_VERSION}"
 
-stamp="$REPO_ROOT/.local/stamps/${TOOL_NAME}_${TOOL_VERSION}_${REPO_ARCH}"
+stamp="$REPO_LOCAL/stamps/${TOOL_NAME}_${TOOL_VERSION}_${REPO_ARCH}"
 if [[ -f "$stamp" ]]; then
-  printf '%s: cached (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH"
+  printf '%s: cached (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH" >&2
   return 0 2>/dev/null || exit 0
 fi
 
@@ -53,7 +54,7 @@ fi
 prefix="$REPO_TOOLCHAIN"
 install_bin="${TOOL_INSTALL_BIN:-bin/$TOOL_NAME}"
 
-mkdir -p "$prefix" "$REPO_ROOT/.local/stamps"
+mkdir -p "$prefix" "$REPO_LOCAL/stamps"
 
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' RETURN EXIT
@@ -68,7 +69,7 @@ case "$url" in
 esac
 archive="$scratch/${TOOL_NAME}.${ext}"
 
-printf '%s: fetching %s\n' "$TOOL_NAME" "$url"
+printf '%s: fetching %s\n' "$TOOL_NAME" "$url" >&2
 if ! curl -fsSL --retry 3 --retry-delay 2 -o "$archive" "$url"; then
   printf '%s: fetch failed (%s)\n' "$TOOL_NAME" "$url" >&2
   return 1 2>/dev/null || exit 1
@@ -102,7 +103,7 @@ if [[ -n "${TOOL_PRUNE_PATHS+x}" ]]; then
     [[ -z "$p" ]] && continue
     target="$prefix/$p"
     if [[ -e "$target" || -L "$target" ]]; then
-      printf '%s: pruning %s\n' "$TOOL_NAME" "$p"
+      printf '%s: pruning %s\n' "$TOOL_NAME" "$p" >&2
       rm -rf "$target"
     fi
   done
@@ -116,5 +117,9 @@ if [[ ! -e "$target_bin" ]]; then
 fi
 chmod +x "$target_bin"
 
+if declare -F tool_post_install >/dev/null; then
+  tool_post_install "$prefix"
+fi
+
 printf '%s\n' "$TOOL_VERSION" > "$stamp"
-printf '%s: installed (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH"
+printf '%s: installed (%s, %s)\n' "$TOOL_NAME" "$TOOL_VERSION" "$REPO_ARCH" >&2

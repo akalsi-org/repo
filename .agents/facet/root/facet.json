@@ -1,0 +1,35 @@
+{
+  "name": "/",
+  "description": "Baseline template substrate and repo-level defaults.",
+  "owns": [
+    "AGENTS.md",
+    "README.md",
+    "CONTEXT.md",
+    "LICENSE",
+    ".editorconfig",
+    ".agents/repo.json",
+    ".agents/facet/root/**",
+    "docs/adr/**",
+    "tools/initialize"
+  ],
+  "consider": [],
+  "commands": [
+    {
+      "name": "initialize",
+      "purpose": "Idempotent post-clone setup: render product files, run setup/bootstrap/checks, and stamp completion."
+    }
+  ],
+  "checks": [
+    {
+      "name": "agent_check_stale",
+      "command": "./repo.sh agent_check --stale-only",
+      "closeout": true
+    },
+    {
+      "name": "whitespace",
+      "command": "git diff --check",
+      "closeout": true
+    }
+  ],
+  "docs": []
+}

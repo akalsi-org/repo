@@ -8,3 +8,7 @@
 | 0004 | [Skill folder names use hyphens; everything else uses underscores](0004_skill_names_hyphens.md) |
 | 0005 | [Caveman mode is the default agent communication style](0005_caveman_default.md) |
 | 0006 | [Cache hygiene principles](0006_cache_hygiene_principles.md) |
+| 0007 | [Facets for repo capabilities](0007_facets_for_repo_capabilities.md) |
+| 0008 | [Pinned binary Python for repo machinery](0008_pinned_binary_python.md) |
+| 0009 | [Cluster-first system tests](0009_cluster_first_system_tests.md) |
+| 0010 | [Declared bootstrap tool dependencies](0010_declared_bootstrap_tool_dependencies.md) |

@@ -35,21 +35,35 @@ def repo_config() -> dict[str, object]:
   return raw
 
 
+def facet_config(name: str) -> dict[str, object]:
+  raw = repo_config().get("facet_config", {})
+  if not isinstance(raw, dict):
+    raise SystemExit("facet_config must be an object")
+  value = raw.get(name, {})
+  if not isinstance(value, dict):
+    raise SystemExit(f"facet_config.{name} must be an object")
+  return value
+
+
 def configured_repo(args: argparse.Namespace) -> str | None:
-  value = args.repo if args.repo is not None else repo_config().get("source_mirror_repo")
+  value = (
+      args.repo
+      if args.repo is not None
+      else facet_config("bootstrap").get("source_mirror_repo")
+  )
   if value is None:
     return None
   if not isinstance(value, str):
-    raise SystemExit("source_mirror_repo must be null or a string")
+    raise SystemExit("facet_config.bootstrap.source_mirror_repo must be null or a string")
   return value
 
 
 def mirror_specs() -> list[dict[str, str]]:
-  specs = repo_config().get("source_mirrors", [])
+  specs = facet_config("bootstrap").get("source_mirrors", [])
   if specs is None:
     return []
   if not isinstance(specs, list):
-    raise SystemExit("source_mirrors must be a list")
+    raise SystemExit("facet_config.bootstrap.source_mirrors must be a list")
   out: list[dict[str, str]] = []
   for spec in specs:
     if not isinstance(spec, dict):
@@ -105,7 +119,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 def cmd_upload(args: argparse.Namespace) -> int:
   repo = configured_repo(args)
   if not repo:
-    raise SystemExit("source mirror repo is disabled; set source_mirror_repo")
+    raise SystemExit("source mirror repo is disabled; set facet_config.bootstrap.source_mirror_repo")
   token = resolve_token()
   if not token:
     raise SystemExit("GITHUB_TOKEN or GH_TOKEN is required")

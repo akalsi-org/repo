@@ -1,0 +1,41 @@
+{
+  "name": "skills",
+  "description": "Agent skill bodies and skill routing metadata.",
+  "owns": [
+    ".agents/skills/**",
+    ".claude/skills",
+    ".codex/skills",
+    ".github/instructions/skills",
+    ".agents/facet/skills/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        "tools/agent_check.py",
+        "tools/agent_check_tests/**"
+      ],
+      "skills": [
+        "doc-sync"
+      ],
+      "reason": "Changes may affect skill routing validation."
+    }
+  ],
+  "commands": [],
+  "checks": [
+    {
+      "name": "agent_check_stale",
+      "command": "./repo.sh agent_check --stale-only",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "skills"
+    },
+    {
+      "surface": ".agents/skills/index.md",
+      "projection": "skill_routes"
+    }
+  ]
+}

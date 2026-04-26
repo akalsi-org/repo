@@ -1,0 +1,57 @@
+{
+  "name": "bootstrap",
+  "description": "Toolchain bootstrap, source mirrors, bootstrap artifacts, and CI cache policy.",
+  "owns": [
+    "bootstrap/**",
+    ".github/workflows/**",
+    "tools/source_mirror",
+    "tools/bootstrap_artifact_release.py",
+    "tools/repo_sh_tests/**",
+    ".agents/facet/bootstrap/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/repo.json"
+      ],
+      "skills": [
+        "bootstrap-toolchain",
+        "cache-hygiene"
+      ],
+      "reason": "Bootstrap and mirror configuration lives in repo config."
+    }
+  ],
+  "commands": [
+    {
+      "name": "source_mirror",
+      "purpose": "List or upload configured byte-identical upstream source mirrors."
+    }
+  ],
+  "checks": [
+    {
+      "name": "bootstrap_smoke",
+      "command": "./repo.sh true",
+      "closeout": true
+    },
+    {
+      "name": "pinned_python",
+      "command": "./repo.sh python3 --version",
+      "closeout": true
+    },
+    {
+      "name": "source_mirror_list",
+      "command": "./repo.sh source_mirror list",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "ci"
+    },
+    {
+      "surface": "README.md",
+      "projection": "bootstrap"
+    }
+  ]
+}

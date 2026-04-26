@@ -64,11 +64,29 @@ class StaleDocTest(FixtureCase):
     new_tool = self.root / "tools/extra-tool"
     new_tool.write_text("#!/bin/sh\nexit 0\n")
     new_tool.chmod(0o755)
-    config = json.loads((self.root / ".agents/repo.json").read_text())
-    config["commands"].append("extra-tool")
-    (self.root / ".agents/repo.json").write_text(json.dumps(config))
+    facet_path = self.root / ".agents/facet/commands/facet.json"
+    facet = json.loads(facet_path.read_text())
+    facet["commands"].append({"name": "extra-tool", "purpose": "does extra"})
+    facet_path.write_text(json.dumps(facet))
     issues = stale_doc_issues(self.root)
     self.assertTrue(_has(issues, "tool missing from AGENTS.md §8: tools/extra-tool"))
+
+  def test_command_inventory_comes_from_facet(self) -> None:
+    issues = stale_doc_issues(self.root)
+    self.assertEqual(issues, [])
+
+  def test_command_inventory_does_not_fall_back_to_repo_json(self) -> None:
+    config = json.loads((self.root / ".agents/repo.json").read_text())
+    config["commands"] = ["sample-tool"]
+    (self.root / ".agents/repo.json").write_text(json.dumps(config))
+    (self.root / ".agents/facet/commands/facet.json").unlink()
+    issues = stale_doc_issues(self.root)
+    self.assertTrue(
+      _has(
+        issues,
+        "AGENTS.md §8 lists command `sample-tool` but .agents/facet/*/facet.json does not",
+      )
+    )
 
   def test_tool_in_agents_missing_on_disk(self) -> None:
     text = (self.root / "AGENTS.md").read_text()

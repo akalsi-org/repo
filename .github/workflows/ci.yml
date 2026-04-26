@@ -64,6 +64,9 @@ jobs:
       - name: Source mirrors
         run: ./repo.sh source_mirror list
 
+      - name: System test
+        run: ./repo.sh system_test
+
       - name: agent_check tests
         run: ./repo.sh python3 -m unittest discover tools/agent_check_tests
 

@@ -1,0 +1,424 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import json
+import os
+import pathlib
+import subprocess
+import tempfile
+from dataclasses import dataclass
+
+
+ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
+LOCAL = pathlib.Path(os.environ.get("REPO_LOCAL") or ROOT / ".local").resolve()
+TOOLCHAIN = pathlib.Path(os.environ.get("REPO_TOOLCHAIN", ""))
+MANIFEST = ROOT / ".agents/facet/system_test/scenarios.json"
+
+PLAIN_CHECKS = ("root", "toolchain", "cluster_ports")
+BWRAP_CHECKS = ("bwrap_hosts",)
+BACKEND_CHECKS = {
+  "plain": PLAIN_CHECKS,
+  "bwrap": BWRAP_CHECKS,
+}
+ACTIVE_LOCKS: list[object] = []
+
+
+@dataclass
+class Result:
+  status: str
+  name: str
+  msg: str = ""
+
+  def line(self) -> str:
+    tag = {"PASS": "[ PASS ]", "SKIP": "[ SKIP ]", "FAIL": "[ FAIL ]"}[self.status]
+    return f"{tag} {self.name} ({self.msg})" if self.msg else f"{tag} {self.name}"
+
+
+class BwrapUnavailable(Exception):
+  pass
+
+
+@dataclass
+class ScenarioManifest:
+  cluster_size: int
+  service_port: int
+  host_port_base: int
+  scenarios: dict[str, list[str]]
+
+
+@dataclass
+class ClusterNode:
+  idx: int
+  name: str
+  ip: str
+  service_port: int
+  host_port: int
+  scratch: pathlib.Path
+
+
+def emit(result: Result) -> None:
+  print(result.line(), flush=True)
+
+
+def summary(results: list[Result]) -> tuple[int, int, int]:
+  return (
+    sum(1 for r in results if r.status == "PASS"),
+    sum(1 for r in results if r.status == "SKIP"),
+    sum(1 for r in results if r.status == "FAIL"),
+  )
+
+
+def cluster_nodes(
+    root: pathlib.Path,
+    count: int,
+    service_port: int,
+    host_port_base: int,
+) -> list[ClusterNode]:
+  nodes = []
+  for idx in range(count):
+    scratch = root / f"host-{idx}"
+    scratch.mkdir(parents=True, exist_ok=True)
+    nodes.append(ClusterNode(
+      idx=idx,
+      name=f"node-{idx}",
+      ip=f"127.0.0.{idx + 2}",
+      service_port=service_port,
+      host_port=host_port_base + idx,
+      scratch=scratch,
+    ))
+  return nodes
+
+
+def write_hosts_file(path: pathlib.Path, nodes: list[ClusterNode]) -> None:
+  lines = ["127.0.0.1 localhost\n"]
+  lines.extend(f"{node.ip} {node.name}\n" for node in nodes)
+  path.write_text("".join(lines), encoding="utf-8")
+
+
+def cluster_lock_dir() -> pathlib.Path:
+  return LOCAL / "locks" / "system_test" / "cluster_mapping"
+
+
+def claim_mapping(
+    lock_dir: pathlib.Path,
+    key: str,
+    value: str,
+    claimed: set[str],
+) -> bool:
+  if key in claimed:
+    return False
+  lock_dir.mkdir(parents=True, exist_ok=True)
+  path = lock_dir / key
+  f = path.open("w", encoding="utf-8")
+  try:
+    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+  except BlockingIOError:
+    f.close()
+    return False
+  f.seek(0)
+  f.truncate()
+  f.write(value)
+  f.flush()
+  ACTIVE_LOCKS.append(f)
+  claimed.add(key)
+  return True
+
+
+def assert_cluster_mapping(lock_dir: pathlib.Path, nodes: list[ClusterNode]) -> list[Result]:
+  results: list[Result] = []
+  claimed: set[str] = set()
+  for node in nodes:
+    ok = (
+      claim_mapping(lock_dir, f"name-{node.name}", node.ip, claimed)
+      and claim_mapping(lock_dir, f"ip-{node.ip}", node.name, claimed)
+    )
+    results.append(Result(
+      "PASS" if ok else "FAIL",
+      f"repo:cluster:mapping:{node.idx}",
+      f"{node.name}->{node.ip}",
+    ))
+  return results
+
+
+def _manifest_error(path: pathlib.Path, msg: str) -> ValueError:
+  return ValueError(f"{path}: {msg}")
+
+
+def _port(raw: object, *, field: str, path: pathlib.Path) -> int:
+  if not isinstance(raw, int) or isinstance(raw, bool) or raw < 1 or raw > 65535:
+    raise _manifest_error(path, f"{field} must be integer 1..65535")
+  return raw
+
+
+def load_manifest(path: pathlib.Path = MANIFEST) -> ScenarioManifest:
+  try:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+  except FileNotFoundError as e:
+    raise _manifest_error(path, "manifest missing") from e
+  except json.JSONDecodeError as e:
+    raise _manifest_error(path, f"invalid JSON ({e.msg})") from e
+
+  if not isinstance(raw, dict):
+    raise _manifest_error(path, "top level must be object")
+  extra_keys = sorted(set(raw) - {
+    "cluster_size",
+    "service_port",
+    "host_port_base",
+    "scenarios",
+  })
+  if extra_keys:
+    raise _manifest_error(path, f"unknown keys: {', '.join(extra_keys)}")
+
+  cluster_size = raw.get("cluster_size")
+  if not isinstance(cluster_size, int) or isinstance(cluster_size, bool) or cluster_size < 1:
+    raise _manifest_error(path, "cluster_size must be integer >= 1")
+  service_port = _port(raw.get("service_port"), field="service_port", path=path)
+  host_port_base = _port(raw.get("host_port_base"), field="host_port_base", path=path)
+  if host_port_base + cluster_size - 1 > 65535:
+    raise _manifest_error(path, "host_port_base range exceeds 65535")
+
+  scenarios = raw.get("scenarios")
+  if not isinstance(scenarios, dict):
+    raise _manifest_error(path, "scenarios must be object")
+
+  parsed: dict[str, list[str]] = {}
+  for backend, checks in scenarios.items():
+    if backend not in BACKEND_CHECKS:
+      raise _manifest_error(path, f"unknown backend `{backend}`")
+    if not isinstance(checks, list) or not checks:
+      raise _manifest_error(path, f"scenarios.{backend} must be non-empty list")
+    parsed_checks = []
+    for check in checks:
+      if not isinstance(check, str):
+        raise _manifest_error(path, f"scenarios.{backend} entries must be strings")
+      if check not in BACKEND_CHECKS[backend]:
+        raise _manifest_error(path, f"unknown {backend} check `{check}`")
+      parsed_checks.append(check)
+    parsed[backend] = parsed_checks
+
+  if not parsed:
+    raise _manifest_error(path, "scenarios must declare at least one backend")
+  return ScenarioManifest(
+    cluster_size=cluster_size,
+    service_port=service_port,
+    host_port_base=host_port_base,
+    scenarios=parsed,
+  )
+
+
+class PlainBackend(contextlib.AbstractContextManager):
+  label = "repo:plain"
+
+  def __init__(
+      self,
+      cluster_size: int,
+      service_port: int,
+      host_port_base: int,
+      checks: list[str],
+  ) -> None:
+    self.cluster_size = cluster_size
+    self.service_port = service_port
+    self.host_port_base = host_port_base
+    self.checks = checks
+    self._tmp: tempfile.TemporaryDirectory[str] | None = None
+
+  def __enter__(self) -> "PlainBackend":
+    self._tmp = tempfile.TemporaryDirectory(prefix="repo-system-test-plain-")
+    return self
+
+  def __exit__(self, *exc: object) -> None:
+    if self._tmp is not None:
+      self._tmp.cleanup()
+    self._tmp = None
+
+  def run(self) -> list[Result]:
+    assert self._tmp is not None
+    results: list[Result] = []
+    if "root" in self.checks:
+      results.append(Result("PASS" if ROOT.is_dir() else "FAIL", f"{self.label}:root", str(ROOT)))
+    if "toolchain" in self.checks:
+      results.append(Result("PASS" if TOOLCHAIN else "FAIL", f"{self.label}:toolchain", str(TOOLCHAIN)))
+    if "cluster_ports" in self.checks:
+      nodes = cluster_nodes(
+        pathlib.Path(self._tmp.name) / "cluster",
+        self.cluster_size,
+        self.service_port,
+        self.host_port_base,
+      )
+      write_hosts_file(pathlib.Path(self._tmp.name) / "hosts", nodes)
+      for node in nodes:
+        ok = node.scratch.is_dir()
+        results.append(Result(
+          "PASS" if ok else "FAIL",
+          f"{self.label}:cluster:host-{node.idx}",
+          f"{node.name}={node.ip}:{node.service_port}->host:{node.host_port}",
+        ))
+    return results
+
+
+def bwrap_paths() -> tuple[pathlib.Path, pathlib.Path]:
+  if not TOOLCHAIN:
+    raise BwrapUnavailable("REPO_TOOLCHAIN unset")
+  bwrap = TOOLCHAIN / "bwrap" / "bin" / "bwrap"
+  rootfs = TOOLCHAIN / "alpine"
+  if not bwrap.is_file():
+    raise BwrapUnavailable(f"missing bwrap shim at {bwrap}")
+  if not (rootfs / "bin" / "busybox").is_file():
+    raise BwrapUnavailable(f"missing alpine rootfs at {rootfs}")
+  return bwrap, rootfs
+
+
+class BwrapBackend(contextlib.AbstractContextManager):
+  label = "repo:bwrap"
+
+  def __init__(
+      self,
+      cluster_size: int,
+      service_port: int,
+      host_port_base: int,
+      checks: list[str],
+  ) -> None:
+    self.cluster_size = cluster_size
+    self.service_port = service_port
+    self.host_port_base = host_port_base
+    self.checks = checks
+    self.bwrap, self.rootfs = bwrap_paths()
+    self._tmp: tempfile.TemporaryDirectory[str] | None = None
+
+  def __enter__(self) -> "BwrapBackend":
+    self._tmp = tempfile.TemporaryDirectory(prefix="repo-system-test-bwrap-")
+    return self
+
+  def __exit__(self, *exc: object) -> None:
+    if self._tmp is not None:
+      self._tmp.cleanup()
+    self._tmp = None
+
+  def run_host(self, node: ClusterNode) -> Result:
+    hosts_file = pathlib.Path(self._tmp.name) / "hosts"
+    proc = subprocess.run(
+      [
+        str(self.bwrap),
+        "--ro-bind", str(self.rootfs), "/",
+        "--ro-bind", str(hosts_file), "/etc/hosts",
+        "--bind", str(node.scratch), "/tmp",
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-uts",
+        "--unshare-ipc",
+        "--die-with-parent",
+        "--",
+        "/bin/sh",
+        "-c",
+        f"grep -q '{node.ip} {node.name}' /etc/hosts && /bin/true",
+      ],
+      capture_output=True,
+      text=True,
+      timeout=10,
+    )
+    if proc.returncode != 0:
+      tail = ((proc.stderr or proc.stdout) or "").strip().splitlines()
+      msg = tail[-1] if tail else f"rc={proc.returncode}"
+      return Result("SKIP", f"{self.label}:cluster:host-{node.idx}", msg)
+    return Result(
+      "PASS",
+      f"{self.label}:cluster:host-{node.idx}",
+      f"{node.name}={node.ip}:{node.service_port}->host:{node.host_port}",
+    )
+
+  def run(self) -> list[Result]:
+    assert self._tmp is not None
+    if "bwrap_hosts" not in self.checks:
+      return []
+    nodes = cluster_nodes(
+      pathlib.Path(self._tmp.name) / "cluster",
+      self.cluster_size,
+      self.service_port,
+      self.host_port_base,
+    )
+    write_hosts_file(pathlib.Path(self._tmp.name) / "hosts", nodes)
+    return [self.run_host(node) for node in nodes]
+
+
+def backend_classes(name: str, manifest: ScenarioManifest) -> list[type]:
+  if name == "plain":
+    if "plain" not in manifest.scenarios:
+      raise ValueError("backend `plain` not declared in scenario manifest")
+    return [PlainBackend]
+  if name == "bwrap":
+    if "bwrap" not in manifest.scenarios:
+      raise ValueError("backend `bwrap` not declared in scenario manifest")
+    return [BwrapBackend]
+  return [
+    backend_cls
+    for backend_cls in (PlainBackend, BwrapBackend)
+    if backend_cls.__name__.removesuffix("Backend").lower() in manifest.scenarios
+  ]
+
+
+def main() -> int:
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--backend", choices=("auto", "plain", "bwrap"), default="auto")
+  parser.add_argument("--cluster-size", type=int)
+  args = parser.parse_args()
+  if args.cluster_size is not None and args.cluster_size < 1:
+    parser.error("--cluster-size must be >= 1")
+
+  try:
+    manifest = load_manifest()
+  except ValueError as e:
+    parser.error(str(e))
+
+  cluster_size = args.cluster_size if args.cluster_size is not None else manifest.cluster_size
+  results: list[Result] = []
+  with tempfile.TemporaryDirectory(prefix="repo-system-test-map-") as td:
+    nodes = cluster_nodes(
+      pathlib.Path(td) / "cluster",
+      cluster_size,
+      manifest.service_port,
+      manifest.host_port_base,
+    )
+    for result in assert_cluster_mapping(cluster_lock_dir(), nodes):
+      emit(result)
+      results.append(result)
+  try:
+    selected_backends = backend_classes(args.backend, manifest)
+  except ValueError as e:
+    parser.error(str(e))
+
+  for backend_cls in selected_backends:
+    backend_name = backend_cls.__name__.removesuffix("Backend").lower()
+    try:
+      backend = backend_cls(
+        cluster_size,
+        manifest.service_port,
+        manifest.host_port_base,
+        manifest.scenarios[backend_name],
+      )
+    except BwrapUnavailable as e:
+      result = Result("SKIP", f"{backend_cls.label}:*", f"bwrap backend skipped ({e})")
+      emit(result)
+      results.append(result)
+      continue
+    try:
+      with backend as active:
+        for result in active.run():
+          emit(result)
+          results.append(result)
+    except Exception as e:  # noqa: BLE001
+      result = Result("FAIL", f"{backend_cls.label}:*", str(e))
+      emit(result)
+      results.append(result)
+
+  passed, skipped, failed = summary(results)
+  print(f"system_test: {passed} passed, {skipped} skipped, {failed} failed")
+  return 1 if failed else 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

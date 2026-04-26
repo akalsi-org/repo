@@ -1,0 +1,15 @@
+{
+  "cluster_size": 3,
+  "service_port": 8080,
+  "host_port_base": 41000,
+  "scenarios": {
+    "plain": [
+      "root",
+      "toolchain",
+      "cluster_ports"
+    ],
+    "bwrap": [
+      "bwrap_hosts"
+    ]
+  }
+}

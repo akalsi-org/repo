@@ -1,0 +1,43 @@
+{
+  "name": "kb",
+  "description": "Repository knowledge-base sources and agent query runtime.",
+  "owns": [
+    ".agents/kb_src/**",
+    "tools/agent",
+    "tools/agent_kb.py",
+    "tools/agent_kb_tests/**",
+    ".agents/facet/kb/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/skills/**",
+        "AGENTS.md",
+        "README.md"
+      ],
+      "skills": [
+        "knowledge-management"
+      ],
+      "reason": "KB facts may need updated refs, skills, or checks."
+    }
+  ],
+  "commands": [
+    {
+      "name": "agent",
+      "purpose": "Query and maintain the repository agent knowledge base."
+    }
+  ],
+  "checks": [
+    {
+      "name": "agent_kb_tests",
+      "command": "./repo.sh python3 -m unittest discover tools/agent_kb_tests",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "kb"
+    }
+  ]
+}

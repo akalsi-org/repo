@@ -178,27 +178,37 @@ def _load_repo_config(root: pathlib.Path) -> dict[str, object]:
   return raw
 
 
+def _facet_config(root: pathlib.Path, name: str) -> dict[str, object]:
+  raw = _load_repo_config(root).get("facet_config", {})
+  if not isinstance(raw, dict):
+    raise SystemExit("facet_config must be an object")
+  value = raw.get(name, {})
+  if not isinstance(value, dict):
+    raise SystemExit(f"facet_config.{name} must be an object")
+  return value
+
+
 def _artifact_specs(root: pathlib.Path) -> list[dict[str, object]]:
-  raw = _load_repo_config(root).get("bootstrap_artifacts", [])
+  raw = _facet_config(root, "bootstrap").get("bootstrap_artifacts", [])
   if raw is None:
     return []
   if not isinstance(raw, list):
-    raise SystemExit("bootstrap_artifacts must be a list")
+    raise SystemExit("facet_config.bootstrap.bootstrap_artifacts must be a list")
   specs: list[dict[str, object]] = []
   for item in raw:
     if not isinstance(item, dict):
-      raise SystemExit("bootstrap_artifacts entries must be objects")
+      raise SystemExit("facet_config.bootstrap.bootstrap_artifacts entries must be objects")
     name = item.get("name")
     path = item.get("path")
     witnesses = item.get("witnesses", [])
     extra = item.get("extra", "")
     if not isinstance(name, str) or not isinstance(path, str):
-      raise SystemExit("bootstrap_artifacts entries need name and path")
+      raise SystemExit("facet_config.bootstrap.bootstrap_artifacts entries need name and path")
     if not isinstance(witnesses, list) or not all(
         isinstance(v, str) for v in witnesses):
-      raise SystemExit("bootstrap_artifacts witnesses must be list[str]")
+      raise SystemExit("facet_config.bootstrap.bootstrap_artifacts witnesses must be list[str]")
     if not isinstance(extra, str):
-      raise SystemExit("bootstrap_artifacts extra must be a string")
+      raise SystemExit("facet_config.bootstrap.bootstrap_artifacts extra must be a string")
     specs.append({
         "name": name,
         "path": path,

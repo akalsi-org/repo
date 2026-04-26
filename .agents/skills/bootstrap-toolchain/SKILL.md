@@ -36,6 +36,7 @@ and sources one of the helpers:
 # bootstrap/tools/<tool>.sh
 TOOL_NAME=<tool>
 TOOL_VERSION=<x.y.z>
+TOOL_DEPS=(other-tool another-tool)          # optional; bootstrap graph edges
 
 # Binary form:
 TOOL_URL_x86_64="https://.../<tool>-x86_64.tar.gz"
@@ -61,9 +62,16 @@ TOOL_BUILD_CMDS=(
 . "$REPO_ROOT/bootstrap/fetch_source.sh"
 ```
 
+Specs that need another bootstrapped tool declare it in `TOOL_DEPS`.
+`repo.sh` queries every spec with `BOOTSTRAP_PLAN_ONLY=1`, validates
+unknown/self/cyclic dependencies, builds dependency-ready batches, and
+executes those batches. Each spec must return before sourcing helpers
+when `BOOTSTRAP_PLAN_ONLY=1` so graph planning does not fetch tools.
+
 The helpers do not invent flags — they read these declared variables
 and act. To support a new tool, add a new `bootstrap/tools/<tool>.sh`
-file. No code in helpers changes.
+file. No code in helpers changes unless the helper surface itself is
+being extended.
 
 ## Invariants
 
@@ -104,9 +112,13 @@ in the same commit.
 1. Pick a binary distribution if one exists; otherwise source.
 2. Verify the SHA256 yourself (`curl -fsSL <url> | sha256sum`).
 3. Write `bootstrap/tools/<tool>.sh` using the spec above.
-4. Run `./repo.sh true` to fetch.
-5. Confirm `$REPO_TOOLCHAIN/bin/<tool>` is on `PATH`.
-6. Commit; CI cache key auto-bumps.
+4. Declare `TOOL_DEPS=(...)` if this tool needs another bootstrap
+   spec to run first.
+5. Run `./repo.sh __repo_bootstrap_plan` to confirm the dependency
+   batch shape.
+6. Run `./repo.sh true` to fetch.
+7. Confirm `$REPO_TOOLCHAIN/bin/<tool>` is on `PATH`.
+8. Commit; CI cache key auto-bumps.
 
 ## Upgrading a tool
 
