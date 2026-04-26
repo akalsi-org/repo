@@ -1479,6 +1479,32 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
         f"artifact={candidate.get('source_artifact', '')} "
         f"lesson={candidate['lesson']}"
       )
+  print("evidence_lineage:")
+  lineage_count = 0
+  for row in rows:
+    idea_id = row.get("id")
+    source_lesson = row.get("source_lesson")
+    source_check = row.get("source_check")
+    source_artifact = row.get("source_artifact")
+    reviewed_by = row.get("reviewed_by")
+    reviewed_at = row.get("reviewed_at")
+    if any([source_lesson, source_check, source_artifact, reviewed_by, reviewed_at]):
+      lineage_parts = []
+      if source_lesson:
+        lineage_parts.append(f"lesson={source_lesson}")
+      if source_check:
+        lineage_parts.append(f"check={source_check}")
+      if source_artifact:
+        lineage_parts.append(f"artifact={source_artifact}")
+      if reviewed_by:
+        lineage_parts.append(f"reviewed_by={reviewed_by}")
+      if reviewed_at:
+        lineage_parts.append(f"reviewed_at={reviewed_at}")
+      if lineage_parts:
+        print(f"  {idea_id}: {' '.join(lineage_parts)}")
+        lineage_count += 1
+  if lineage_count == 0:
+    print("  - none")
   if args.cost:
     risky = cost_risk_rows(rows)
     print(f"cost_risks: {len(risky)}")

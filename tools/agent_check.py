@@ -33,10 +33,13 @@ import pathlib
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
 from tools.facets import closeout_checks as facet_closeout_checks
 from tools.facets import command_names as facet_command_names
 from tools.facets import consideration_notes as facet_consideration_notes
+from tools.facets import facet_consideration_conflicts
+from tools.facets import facet_orphan_paths
 from tools.facets import ownership_issues
 
 
@@ -54,6 +57,7 @@ class Report:
   closeout: list[str]
   ownership: list[str]
   stale: list[str]
+  scorecard: list[dict[str, object]] | None = None
 
   @property
   def is_clean(self) -> bool:
@@ -144,6 +148,80 @@ def glob_match(path: str, pattern: str) -> bool:
   if path == pattern:
     return True
   return _match_segments(path.split("/"), pattern.split("/"))
+
+
+# ---- facet scorecard -------------------------------------------------------
+
+
+def facet_budget_report(root: pathlib.Path) -> list[dict[str, object]]:
+  """Parse all facet.json files and return sprawl scorecard.
+
+  Returns list of dicts: {
+    facet_name, commands_count, paths_count, check_count,
+    stale_days, flags (list of: HIGH_COMMANDS, HIGH_PATHS, STALE, NO_OWNERSHIP)
+  }
+  """
+  now = datetime.now(timezone.utc)
+  facets_dir = root / ".agents/facet"
+  scorecard: list[dict[str, object]] = []
+
+  if not facets_dir.is_dir():
+    return scorecard
+
+  for facet_path in sorted(facets_dir.glob("*/facet.json")):
+    facet_name = facet_path.parent.name
+    try:
+      facet_json = json.loads(facet_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+      continue
+
+    commands = facet_json.get("commands", [])
+    owns = facet_json.get("owns", [])
+    checks = facet_json.get("checks", [])
+
+    commands_count = len(commands) if isinstance(commands, list) else 0
+    paths_count = len(owns) if isinstance(owns, list) else 0
+    checks_count = len(checks) if isinstance(checks, list) else 0
+
+    flags: list[str] = []
+
+    # Check for sprawl: HIGH_COMMANDS (>5)
+    if commands_count > 5:
+      flags.append("HIGH_COMMANDS")
+
+    # Check for sprawl: HIGH_PATHS (>8)
+    if paths_count > 8:
+      flags.append("HIGH_PATHS")
+
+    # Check for stale: OWNERSHIP.md older than 90 days
+    stale_days = None
+    ownership_path = facet_path.parent / "OWNERSHIP.md"
+    if ownership_path.exists():
+      try:
+        mtime = ownership_path.stat().st_mtime
+        mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+        age = now - mtime_dt
+        stale_days = age.days
+        if stale_days > 90:
+          flags.append("STALE")
+      except OSError:
+        pass
+    else:
+      if paths_count > 0:
+        flags.append("NO_OWNERSHIP")
+
+    scorecard.append(
+      {
+        "facet_name": facet_name,
+        "commands_count": commands_count,
+        "paths_count": paths_count,
+        "checks_count": checks_count,
+        "stale_days": stale_days,
+        "flags": flags,
+      }
+    )
+
+  return scorecard
 
 
 # ---- skill index parsing ---------------------------------------------------
@@ -260,6 +338,76 @@ def _str_list(raw: object, *, field: str) -> list[str]:
   if not isinstance(raw, list) or not all(isinstance(v, str) for v in raw):
     raise ValueError(f"{REPO_CONFIG_REL}:{field} must be list[str]")
   return list(raw)
+
+
+def stale_skill_gates(root: pathlib.Path) -> list[str]:
+  """Parse skill portfolio table and flag gates >180d old.
+
+  Returns list of stale gate warnings: "STALE_SKILL_GATES: <skill> tier=<tier> age=<days>d last_reviewed=<date>"
+  """
+  from datetime import datetime, timezone, timedelta
+
+  issues: list[str] = []
+  index_path = root / SKILL_INDEX_REL
+  if not index_path.exists():
+    return issues
+
+  text = _read(index_path)
+  in_portfolio_table = False
+  today = datetime.now(timezone.utc).date()
+  max_age_days = 180
+
+  for line in text.splitlines():
+    # Detect skill portfolio section
+    if "Skill Portfolio" in line:
+      in_portfolio_table = True
+      continue
+
+    if in_portfolio_table:
+      # Stop at next section (starts with ##)
+      if line.startswith("##"):
+        break
+
+      # Skip non-table rows
+      if not line.startswith("|"):
+        continue
+
+      # Parse table row
+      cells = [c.strip() for c in line.strip("|").split("|")]
+      if len(cells) < 4:
+        continue
+
+      # Skip header rows (if it starts with "Skill")
+      if "Skill" in cells[0]:
+        continue
+
+      skill_cell = cells[0]
+      tier_cell = cells[1]
+      date_cell = cells[2]
+      status_cell = cells[3] if len(cells) > 3 else ""
+
+      # Extract skill name from backticks
+      skill_match = re.search(r"`([a-z][a-z0-9_-]*)`", skill_cell)
+      if not skill_match:
+        continue
+      skill_name = skill_match.group(1)
+
+      # Extract date from cell (YYYY-MM-DD format)
+      date_match = re.search(r"(\d{4}-\d{2}-\d{2})", date_cell)
+      if not date_match:
+        continue
+
+      try:
+        gate_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").date()
+        days_old = (today - gate_date).days
+        if days_old > max_age_days:
+          issues.append(
+            f"STALE_SKILL_GATES: {skill_name} tier={tier_cell} age={days_old}d last_reviewed={date_match.group(1)}"
+          )
+      except ValueError:
+        continue
+
+  return issues
 
 
 def stale_doc_issues(root: pathlib.Path) -> list[str]:
@@ -399,17 +547,10 @@ def build_report(root: pathlib.Path) -> Report:
     | {"git diff --check", "./repo.sh agent_check"}
   )
   stale = stale_doc_issues(root)
-  # Add stale skill gate checks
-  from datetime import datetime, timezone, timedelta
-  now = datetime.now(timezone.utc)
-  max_age = timedelta(days=180)
-  index_path = root / SKILL_INDEX_REL
-  if index_path.is_file():
-    text = _read(index_path)
-    for line in text.split('\n'):
-      if 'Skill Portfolio' in line:
-        break
-    # Simple: just validate table exists. Full parse can come later.
+  stale.extend(stale_skill_gates(root))
+  stale.extend(facet_orphan_paths(root))
+  stale.extend(facet_consideration_conflicts(root))
+  scorecard = facet_budget_report(root)
   return Report(
     paths=paths,
     skills=sorted(skills),
@@ -417,6 +558,7 @@ def build_report(root: pathlib.Path) -> Report:
     closeout=closeout,
     ownership=ownership_issues(root, paths),
     stale=stale,
+    scorecard=scorecard,
   )
 
 
@@ -446,6 +588,18 @@ def render_report(root: pathlib.Path, report: Report) -> str:
     "",
     _render_list("stale-doc issues:", report.stale),
   ]
+  if report.scorecard:
+    parts.extend(["", "facet scorecard:"])
+    for entry in report.scorecard:
+      flags_str = ", ".join(entry.get("flags", []))
+      flags_display = f" [{flags_str}]" if flags_str else ""
+      stale_display = f" stale={entry.get('stale_days')}d" if entry.get("stale_days") is not None else ""
+      parts.append(
+        f"  - {entry.get('facet_name')}: "
+        f"commands={entry.get('commands_count')} "
+        f"paths={entry.get('paths_count')} "
+        f"checks={entry.get('checks_count')}{stale_display}{flags_display}"
+      )
   return "\n".join(parts) + "\n"
 
 
