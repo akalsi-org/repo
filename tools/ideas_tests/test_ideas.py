@@ -771,6 +771,93 @@ class IdeasCliTest(unittest.TestCase):
     self.assertIn("next_bet_candidate: source=archived-outcomes target=learning-ledger owner=ideas", proc.stdout)
     self.assertIn("action=add learning ledger from archived outcomes and reviews", proc.stdout)
 
+  def test_sync_learning_ledger_writes_archived_review_rows(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "lesson-source",
+      "--title",
+      "Lesson source",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "lesson-source", "--state", "done")
+    self.run_ideas(
+      "review",
+      "lesson-source",
+      "--expected",
+      "review captured",
+      "--actual",
+      "report now emits stable next-bet synthesis",
+      "--follow-up",
+      "add learning ledger from archived outcomes and reviews",
+    )
+    proc = self.run_ideas("sync_learning_ledger")
+    self.assertIn("sync_learning_ledger: 1 rows", proc.stdout)
+    rows = [
+      json.loads(line)
+      for line in (self.root / ".agents/kb_src/tables/learning_ledger.jsonl").read_text(encoding="utf-8").splitlines()
+      if line.strip()
+    ]
+    self.assertEqual(rows[0]["id"], "lesson_lesson-source")
+    self.assertEqual(rows[0]["target_id"], TARGET_ID)
+    self.assertEqual(rows[0]["facet"], "ideas")
+    self.assertEqual(rows[0]["source_artifact"], "tools/ideas.py")
+    self.assertEqual(rows[0]["lesson"], "report now emits stable next-bet synthesis")
+
+  def test_report_lists_learning_ledger_rows(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_one",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "source",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas report --cost",
+          "lesson": "durable lesson",
+          "follow_up": "next real slice",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn("learning_ledger_rows: 1", proc.stdout)
+    self.assertIn("learning_lesson: lesson_one target=smooth-execution facet=ideas check=./repo.sh ideas report --cost", proc.stdout)
+
   def test_unknown_target_rejected(self) -> None:
     proc = self.run_ideas(
       "add",

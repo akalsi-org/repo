@@ -22,6 +22,7 @@ from tools.targets import TargetLedger, load_target_ledger
 
 
 IDEAS_REL = ".agents/ideas/ideas.jsonl"
+LEARNING_LEDGER_REL = ".agents/kb_src/tables/learning_ledger.jsonl"
 STATES = ("seed", "shaped", "decided", "queued", "active", "done", "rejected", "parked")
 SCORES = ("H", "M", "L")
 VERDICTS = ("Do now", "Design first", "Watch", "Avoid")
@@ -105,6 +106,10 @@ def ideas_path(root: pathlib.Path) -> pathlib.Path:
   return root / IDEAS_REL
 
 
+def learning_ledger_path(root: pathlib.Path) -> pathlib.Path:
+  return root / LEARNING_LEDGER_REL
+
+
 def load_rows(root: pathlib.Path) -> list[dict[str, object]]:
   path = ideas_path(root)
   if not path.is_file():
@@ -129,6 +134,30 @@ def write_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
     raise SystemExit(f"{IDEAS_REL} missing")
   text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
   path.write_text(text, encoding="utf-8")
+
+
+def load_learning_ledger_rows(root: pathlib.Path) -> list[dict[str, object]]:
+  path = learning_ledger_path(root)
+  if not path.is_file():
+    return []
+  rows: list[dict[str, object]] = []
+  for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    if not line.strip():
+      continue
+    try:
+      row = json.loads(line)
+    except json.JSONDecodeError as exc:
+      raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: invalid JSON: {exc.msg}") from exc
+    if not isinstance(row, dict):
+      raise SystemExit(f"{LEARNING_LEDGER_REL}:{lineno}: row must be object")
+    rows.append(row)
+  return rows
+
+
+def write_learning_ledger_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
+  path = learning_ledger_path(root)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
 
 
 def _list_str(
@@ -379,6 +408,57 @@ def target_lifecycle(
     "state": state,
     "archive_candidate": archive_candidate,
   }
+
+
+def derive_learning_ledger_rows(
+    rows: list[dict[str, object]],
+    ledger: TargetLedger,
+) -> list[dict[str, object]]:
+  archived_targets = {target.id for target in ledger.ordered if target.status == "archived"}
+  derived: list[dict[str, object]] = []
+  for row in rows:
+    if row.get("state") != "done":
+      continue
+    target_id = row.get("target")
+    if not isinstance(target_id, str) or target_id not in archived_targets:
+      continue
+    outcome_review = row.get("outcome_review")
+    if not isinstance(outcome_review, dict):
+      continue
+    reviewed_at = outcome_review.get("reviewed_at")
+    actual = outcome_review.get("actual")
+    if not isinstance(reviewed_at, str) or not reviewed_at:
+      continue
+    if not isinstance(actual, str) or not actual:
+      continue
+    source_idea = row.get("id")
+    if not isinstance(source_idea, str) or not source_idea:
+      continue
+    write_scope = row.get("write_scope")
+    source_artifact = (
+      write_scope[0]
+      if isinstance(write_scope, list) and write_scope and isinstance(write_scope[0], str)
+      else IDEAS_REL
+    )
+    checks = row.get("checks")
+    check = (
+      checks[0]
+      if isinstance(checks, list) and checks and isinstance(checks[0], str)
+      else ""
+    )
+    follow_up = outcome_review.get("follow_up")
+    derived.append({
+      "id": f"lesson_{source_idea}",
+      "target_id": target_id,
+      "facet": row.get("owner"),
+      "source_idea": source_idea,
+      "source_artifact": source_artifact,
+      "check": check,
+      "lesson": actual,
+      "follow_up": follow_up if isinstance(follow_up, str) else "",
+      "reviewed_at": reviewed_at,
+    })
+  return sorted(derived, key=lambda item: (str(item["reviewed_at"]), str(item["id"])))
 
 
 def unused_active_targets(
@@ -905,12 +985,14 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   unreviewed = unreviewed_done_rows(rows)
   target_lines = target_summary_rows(rows, ledger, now=now)
   unused_targets = unused_active_targets(rows, ledger)
+  learning_rows = load_learning_ledger_rows(root)
   candidate = next_bet_candidate(rows, ledger)
   print(f"ideas: {len(rows)}")
   print(f"validation_issues: {len(issues)}")
   print(f"stale: {len(stale)}")
   print(f"blocked_decisions: {len(blocked)}")
   print(f"targets: {len(ledger.ordered)}")
+  print(f"learning_ledger_rows: {len(learning_rows)}")
   print(f"unused_active_targets: {len(unused_targets)}")
   print(f"done_without_review: {len(unreviewed)}")
   for issue in issues:
@@ -928,6 +1010,11 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
     print(f"  unused_target: {target_id}")
   for row in unreviewed:
     print(f"  unreviewed_done: {row.get('id')}")
+  for row in learning_rows[:3]:
+    print(
+      f"  learning_lesson: {row.get('id')} target={row.get('target_id')} "
+      f"facet={row.get('facet')} check={row.get('check')}"
+    )
   if candidate is not None:
     print(
       "next_bet_candidate: "
@@ -949,6 +1036,19 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
         f"checks={budget.checks} closeout={budget.closeout_checks} docs={budget.docs}"
       )
   return 1 if issues else 0
+
+
+def cmd_sync_learning_ledger(root: pathlib.Path, args: argparse.Namespace) -> int:
+  del args
+  rows = load_rows(root)
+  ledger = load_target_ledger(root)
+  issues = validate_rows(root, rows, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
+  derived = derive_learning_ledger_rows(rows, ledger)
+  write_learning_ledger_rows(root, derived)
+  print(f"sync_learning_ledger: {len(derived)} rows")
+  return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1022,6 +1122,9 @@ def build_parser() -> argparse.ArgumentParser:
   p_report.add_argument("--stale-days", type=int, default=30)
   p_report.add_argument("--cost", action="store_true")
   p_report.set_defaults(func=cmd_report)
+
+  p_sync_learning = sub.add_parser("sync_learning_ledger")
+  p_sync_learning.set_defaults(func=cmd_sync_learning_ledger)
   return parser
 
 
