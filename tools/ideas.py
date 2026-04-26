@@ -873,6 +873,36 @@ def evidence_note(lesson: Mapping[str, object]) -> str:
   )
 
 
+def _match_filter(value: object, expected: str | None, *, exact: bool) -> bool:
+  if expected is None:
+    return True
+  if not isinstance(value, str):
+    return False
+  return value == expected if exact else expected in value
+
+
+def filter_learning_rows(
+    rows: list[dict[str, object]],
+    *,
+    facet: str | None = None,
+    target: str | None = None,
+    check: str | None = None,
+    artifact: str | None = None,
+) -> list[dict[str, object]]:
+  filtered: list[dict[str, object]] = []
+  for row in rows:
+    if not _match_filter(row.get("facet"), facet, exact=True):
+      continue
+    if not _match_filter(row.get("target_id"), target, exact=True):
+      continue
+    if not _match_filter(row.get("check"), check, exact=False):
+      continue
+    if not _match_filter(row.get("source_artifact"), artifact, exact=False):
+      continue
+    filtered.append(row)
+  return filtered
+
+
 def is_queue_ready(row: dict[str, object]) -> bool:
   return not readiness_blockers(row)
 
@@ -1174,6 +1204,38 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   return 0
 
 
+def cmd_lessons(root: pathlib.Path, args: argparse.Namespace) -> int:
+  rows = load_rows(root)
+  ledger = load_target_ledger(root)
+  learning_rows = load_learning_ledger_rows(root)
+  issues = learning_ledger_freshness_issues(rows, ledger, learning_rows)
+  if issues:
+    raise SystemExit("\n".join(issues))
+  filtered = filter_learning_rows(
+    learning_rows,
+    facet=args.facet,
+    target=args.target,
+    check=args.check,
+    artifact=args.artifact,
+  )
+  if args.json:
+    print(json.dumps({"lessons": filtered}, sort_keys=True))
+    return 0
+  if not filtered:
+    print("lessons: none")
+    return 0
+  for row in filtered:
+    print(
+      f"{row.get('id')}: target={row.get('target_id')} facet={row.get('facet')} "
+      f"check={row.get('check')}"
+    )
+    print(f"  {row.get('lesson', '')}")
+    follow_up = row.get("follow_up")
+    if isinstance(follow_up, str) and follow_up:
+      print(f"  follow_up: {follow_up}")
+  return 0
+
+
 def cmd_ready(root: pathlib.Path, args: argparse.Namespace) -> int:
   del args
   rows = load_rows(root)
@@ -1378,6 +1440,14 @@ def build_parser() -> argparse.ArgumentParser:
 
   p_ready = sub.add_parser("ready")
   p_ready.set_defaults(func=cmd_ready)
+
+  p_lessons = sub.add_parser("lessons")
+  p_lessons.add_argument("--facet")
+  p_lessons.add_argument("--target")
+  p_lessons.add_argument("--check")
+  p_lessons.add_argument("--artifact")
+  p_lessons.add_argument("--json", action="store_true")
+  p_lessons.set_defaults(func=cmd_lessons)
 
   p_report = sub.add_parser("report")
   p_report.add_argument("--stale-days", type=int, default=30)

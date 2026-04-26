@@ -896,6 +896,124 @@ class IdeasCliTest(unittest.TestCase):
     self.assertNotEqual(proc.returncode, 0)
     self.assertIn("missing or empty", proc.stderr)
 
+  def test_lessons_lists_filtered_rows(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      "\n".join([
+        json.dumps(
+          {
+            "id": "lesson_one",
+            "target_id": TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source",
+            "source_artifact": "tools/ideas.py",
+            "check": "./repo.sh ideas ready",
+            "lesson": "first lesson",
+            "follow_up": "first follow up",
+            "reviewed_at": "2026-04-26T12:00:00+00:00",
+          }
+        ),
+        json.dumps(
+          {
+            "id": "lesson_two",
+            "target_id": REVIEW_TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source-two",
+            "source_artifact": "tools/initialize",
+            "check": "./repo.sh ideas report --cost",
+            "lesson": "second lesson",
+            "follow_up": "second follow up",
+            "reviewed_at": "2026-04-26T12:01:00+00:00",
+          }
+        ),
+      ]) + "\n",
+    )
+    proc = self.run_ideas("lessons", "--artifact", "initialize", "--check", "report --cost")
+    self.assertIn("lesson_two: target=review-loop facet=ideas check=./repo.sh ideas report --cost", proc.stdout)
+    self.assertIn("second lesson", proc.stdout)
+    self.assertIn("follow_up: second follow up", proc.stdout)
+    self.assertNotIn("lesson_one:", proc.stdout)
+
+  def test_lessons_json_returns_filtered_payload(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_one",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "source",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas ready",
+          "lesson": "first lesson",
+          "follow_up": "first follow up",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas("lessons", "--target", TARGET_ID, "--json")
+    payload = json.loads(proc.stdout)
+    self.assertEqual(len(payload["lessons"]), 1)
+    self.assertEqual(payload["lessons"][0]["id"], "lesson_one")
+
+  def test_lessons_fail_on_stale_learning_ledger(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "stale-source",
+      "--title",
+      "Stale source",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "stale-source", "--state", "done")
+    self.run_ideas(
+      "review",
+      "stale-source",
+      "--expected",
+      "review captured",
+      "--actual",
+      "new archived lesson exists",
+      "--follow-up",
+      "query lessons before activation",
+    )
+    write(self.root / ".agents/kb_src/tables/learning_ledger.jsonl", "")
+    proc = self.run_ideas("lessons", check=False)
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("learning_ledger stale: missing=lesson_stale-source", proc.stderr)
+
   def test_report_flags_stale_learning_ledger_drift(self) -> None:
     archived_targets = [
       {
