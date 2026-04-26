@@ -1133,6 +1133,41 @@ def cmd_promote(root: pathlib.Path, args: argparse.Namespace) -> int:
   return 0
 
 
+def cmd_shape_from_decision(root: pathlib.Path, args: argparse.Namespace) -> int:
+  rows = load_rows(root)
+  ledger = load_target_ledger(root)
+  if any(row.get("id") == args.id for row in rows):
+    raise SystemExit(f"idea `{args.id}` already exists")
+  owner = args.owner or "ideas"
+  if owner not in facet_keys(root):
+    raise SystemExit(f"owner Facet `{owner}` missing")
+  now = utc_now()
+  row: dict[str, object] = {
+    "id": args.id,
+    "title": args.title,
+    "owner": owner,
+    "state": "shaped",
+    "target": args.target,
+    "effect": args.recommendation,
+    "checks": [],
+    "reversibility": "high",
+    "maintenance": "L",
+    "decision_required": False,
+    "notes": f"board decision: {args.recommendation}" + (
+      f" (link: {args.link})" if args.link else ""
+    ),
+    "created_at": now,
+    "updated_at": now,
+  }
+  issues = validate_row(root, row, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
+  rows.append(row)
+  write_rows(root, rows)
+  print(f"shaped {args.id} from board decision")
+  return 0
+
+
 def cmd_park(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
   ledger = load_target_ledger(root)
@@ -1505,6 +1540,15 @@ def build_parser() -> argparse.ArgumentParser:
   p_promote.add_argument("id")
   p_promote.add_argument("--state", choices=STATES, required=True)
   p_promote.set_defaults(func=cmd_promote)
+
+  p_shape = sub.add_parser("shape_from_decision")
+  p_shape.add_argument("--id", required=True)
+  p_shape.add_argument("--title", required=True)
+  p_shape.add_argument("--recommendation", required=True)
+  p_shape.add_argument("--target", required=True)
+  p_shape.add_argument("--owner")
+  p_shape.add_argument("--link")
+  p_shape.set_defaults(func=cmd_shape_from_decision)
 
   p_park = sub.add_parser("park")
   p_park.add_argument("id")

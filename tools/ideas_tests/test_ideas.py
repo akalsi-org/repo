@@ -1487,3 +1487,32 @@ class IdeasCliTest(unittest.TestCase):
     )
     self.assertNotEqual(proc.returncode, 0)
     self.assertIn("owner Facet `missing` missing", proc.stderr)
+
+  def test_shape_from_decision_creates_shaped_idea_from_board(self) -> None:
+    proc = self.run_ideas(
+      "shape_from_decision",
+      "--id",
+      "board-pick-001",
+      "--title",
+      "Tighten execution for alpha",
+      "--recommendation",
+      "Scope down alpha bet to core features",
+      "--target",
+      TARGET_ID,
+      "--owner",
+      "ideas",
+      "--link",
+      "board-meeting-2026-04-26",
+    )
+    self.assertIn("shaped board-pick-001 from board decision", proc.stdout)
+    ideas_rows = json.loads(self.run_ideas("list", "--json").stdout)["ideas"]
+    shaped = [r for r in ideas_rows if r["id"] == "board-pick-001"][0]
+    self.assertEqual(shaped["state"], "shaped")
+    self.assertEqual(shaped["title"], "Tighten execution for alpha")
+    self.assertEqual(shaped["effect"], "Scope down alpha bet to core features")
+    self.assertIn("board-meeting-2026-04-26", shaped["notes"])
+    self.assertEqual(shaped["owner"], "ideas")
+    self.assertEqual(shaped["reversibility"], "high")
+    self.assertEqual(shaped["maintenance"], "L")
+    ready = self.run_ideas("ready")
+    self.assertIn("board-pick-001", ready.stdout)
