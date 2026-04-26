@@ -823,6 +823,79 @@ class IdeasCliTest(unittest.TestCase):
     proc = self.run_ideas("report", "--cost")
     self.assertNotIn("next_bet_candidate:", proc.stdout)
 
+  def test_activate_next_bet_mints_target_and_ready_idea_from_lesson(self) -> None:
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_one",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "source",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas ready",
+          "lesson": "receipts need one repo-truth activation path",
+          "follow_up": "mint one active target and one shaped idea from evidence",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--lesson-id",
+      "lesson_one",
+      "--target-id",
+      "activation-target",
+      "--target-title",
+      "Activation target",
+      "--idea-id",
+      "activation-idea",
+      "--idea-title",
+      "Activation idea",
+      "--effect",
+      "Queue refills from evidence-backed repo truth",
+      "--driver",
+      "ideas",
+      "--approver",
+      "CEO",
+    )
+    self.assertIn("activated activation-idea from lesson_one", proc.stdout)
+    ready = self.run_ideas("ready")
+    self.assertIn("activation-idea: Activation idea", ready.stdout)
+    targets = [
+      json.loads(line)
+      for line in (self.root / ".agents/targets/targets.jsonl").read_text(encoding="utf-8").splitlines()
+      if line.strip()
+    ]
+    self.assertEqual(targets[-1]["id"], "activation-target")
+    self.assertEqual(targets[-1]["status"], "active")
+    ideas_rows = json.loads(self.run_ideas("list", "--json").stdout)["ideas"]
+    self.assertEqual(ideas_rows[0]["target"], "activation-target")
+    self.assertEqual(ideas_rows[0]["checks"], ["./repo.sh ideas ready"])
+    self.assertEqual(ideas_rows[0]["write_scope"], ["tools/ideas.py"])
+    self.assertIn("evidence: lesson=lesson_one", ideas_rows[0]["notes"])
+
+  def test_activate_next_bet_fails_on_unknown_lesson(self) -> None:
+    write(self.root / ".agents/kb_src/tables/learning_ledger.jsonl", "")
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--lesson-id",
+      "missing",
+      "--target-id",
+      "activation-target",
+      "--target-title",
+      "Activation target",
+      "--idea-id",
+      "activation-idea",
+      "--idea-title",
+      "Activation idea",
+      "--effect",
+      "Queue refills from evidence-backed repo truth",
+      check=False,
+    )
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("missing or empty", proc.stderr)
+
   def test_sync_learning_ledger_writes_archived_review_rows(self) -> None:
     archived_targets = [
       {

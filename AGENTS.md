@@ -145,7 +145,7 @@ remain isolated by worktree.
 | `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/ + target ledger + starter backlog, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Python | Validate skill routing, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
-| `ideas` | Python | Manage idea inventory, scoring, readiness gates, and stale idea reports. |
+| `ideas` | Python | Manage idea inventory, scoring, readiness gates, stale idea reports, and evidence-backed next-bet activation. |
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |

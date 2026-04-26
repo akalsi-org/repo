@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
   sys.path.insert(0, str(ROOT))
 
 from tools.facets import facet_budgets, facet_keys, glob_match
-from tools.targets import TargetLedger, load_target_ledger
+from tools.targets import TARGETS_REL, TargetLedger, TargetRecord, load_target_ledger
 
 
 IDEAS_REL = ".agents/ideas/ideas.jsonl"
@@ -106,6 +106,10 @@ def ideas_path(root: pathlib.Path) -> pathlib.Path:
   return root / IDEAS_REL
 
 
+def targets_path(root: pathlib.Path) -> pathlib.Path:
+  return root / TARGETS_REL
+
+
 def learning_ledger_path(root: pathlib.Path) -> pathlib.Path:
   return root / LEARNING_LEDGER_REL
 
@@ -134,6 +138,34 @@ def write_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
     raise SystemExit(f"{IDEAS_REL} missing")
   text = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
   path.write_text(text, encoding="utf-8")
+
+
+def load_target_rows(root: pathlib.Path) -> list[dict[str, object]]:
+  path = targets_path(root)
+  if not path.is_file():
+    raise SystemExit(f"{TARGETS_REL} missing")
+  rows: list[dict[str, object]] = []
+  for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    if not line.strip():
+      continue
+    try:
+      row = json.loads(line)
+    except json.JSONDecodeError as exc:
+      raise SystemExit(f"{TARGETS_REL}:{lineno}: invalid JSON: {exc.msg}") from exc
+    if not isinstance(row, dict):
+      raise SystemExit(f"{TARGETS_REL}:{lineno}: row must be object")
+    rows.append(row)
+  return rows
+
+
+def write_target_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
+  path = targets_path(root)
+  if not path.is_file():
+    raise SystemExit(f"{TARGETS_REL} missing")
+  path.write_text(
+    "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+    encoding="utf-8",
+  )
 
 
 def load_learning_ledger_rows(root: pathlib.Path) -> list[dict[str, object]]:
@@ -789,8 +821,31 @@ def find_row(rows: list[dict[str, object]], ident: str) -> dict[str, object]:
   raise SystemExit(f"unknown idea `{ident}`")
 
 
+def find_learning_row(rows: list[dict[str, object]], ident: str) -> dict[str, object]:
+  for row in rows:
+    if row.get("id") == ident:
+      return row
+  raise SystemExit(f"unknown learning lesson `{ident}`")
+
+
 def parse_check(values: list[str]) -> list[str]:
   return list(dict.fromkeys(values))
+
+
+def evidence_note(lesson: Mapping[str, object]) -> str:
+  fields = (
+    ("lesson", lesson.get("id")),
+    ("source_idea", lesson.get("source_idea")),
+    ("artifact", lesson.get("source_artifact")),
+    ("check", lesson.get("check")),
+    ("reviewed_at", lesson.get("reviewed_at")),
+    ("follow_up", lesson.get("follow_up")),
+  )
+  return "evidence: " + " ".join(
+    f"{name}={value}"
+    for name, value in fields
+    if isinstance(value, str) and value
+  )
 
 
 def is_queue_ready(row: dict[str, object]) -> bool:
@@ -994,6 +1049,100 @@ def cmd_review(root: pathlib.Path, args: argparse.Namespace) -> int:
   row["updated_at"] = utc_now()
   write_rows(root, rows)
   print(f"reviewed {args.id}")
+  return 0
+
+
+def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
+  rows = load_rows(root)
+  target_rows = load_target_rows(root)
+  ledger = load_target_ledger(root)
+  learning_rows = load_learning_ledger_rows(root)
+  if not learning_rows:
+    raise SystemExit(f"{LEARNING_LEDGER_REL} missing or empty")
+  lesson = find_learning_row(learning_rows, args.lesson_id)
+  if any(row.get("id") == args.idea_id for row in rows):
+    raise SystemExit(f"idea `{args.idea_id}` already exists")
+  if ledger.get(args.target_id) is not None:
+    raise SystemExit(f"target `{args.target_id}` already exists")
+  owner = args.owner or lesson.get("facet")
+  if not isinstance(owner, str) or not owner:
+    raise SystemExit("owner missing from lesson and no --owner supplied")
+  if owner not in facet_keys(root):
+    raise SystemExit(f"owner Facet `{owner}` missing")
+  checks = parse_check(args.check) if args.check else parse_check([
+    str(lesson.get("check") or ""),
+  ])
+  checks = [check for check in checks if check]
+  if not checks:
+    raise SystemExit("activate_next_bet needs at least one check")
+  if args.write_scope:
+    write_scope = parse_check(args.write_scope)
+  else:
+    source_artifact = lesson.get("source_artifact")
+    if not isinstance(source_artifact, str) or not source_artifact:
+      raise SystemExit("activate_next_bet needs --write-scope when lesson has no source_artifact")
+    write_scope = [source_artifact]
+  new_target = TargetRecord(
+    id=args.target_id,
+    title=args.target_title,
+    owner=owner,
+    status="active",
+    review_cadence=args.review_cadence,
+    check=checks[0],
+  )
+  temp_ledger = TargetLedger((*ledger.ordered, new_target))
+  now = utc_now()
+  note_parts = [evidence_note(lesson)]
+  if args.notes:
+    note_parts.append(args.notes)
+  row: dict[str, object] = {
+    "id": args.idea_id,
+    "title": args.idea_title,
+    "owner": owner,
+    "state": args.state,
+    "target": args.target_id,
+    "effect": args.effect,
+    "checks": checks,
+    "reversibility": args.reversibility,
+    "maintenance": args.maintenance,
+    "go_live_cost": args.go_live_cost,
+    "maintenance_overhead": args.maintenance_overhead,
+    "check_cost": args.check_cost,
+    "tool_sprawl": args.tool_sprawl,
+    "parallel_mode": args.parallel_mode,
+    "worktree": args.worktree,
+    "write_scope": write_scope,
+    "decision_required": False,
+    "notes": " ".join(part for part in note_parts if part),
+    "created_at": now,
+    "updated_at": now,
+  }
+  for field in DACI_STR_FIELDS:
+    value = getattr(args, field)
+    if value is not None:
+      row[field] = value
+  daci_list_args = {
+    "contributors": args.contributor,
+    "informed": args.informed,
+  }
+  for field, value in daci_list_args.items():
+    if value is not None:
+      row[field] = parse_check(value)
+  issues = validate_row(root, row, ledger=temp_ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
+  target_rows.append({
+    "id": args.target_id,
+    "title": args.target_title,
+    "owner": owner,
+    "status": "active",
+    "review_cadence": args.review_cadence,
+    "check": checks[0],
+  })
+  rows.append(row)
+  write_target_rows(root, target_rows)
+  write_rows(root, rows)
+  print(f"activated {args.idea_id} from {args.lesson_id}")
   return 0
 
 
@@ -1208,6 +1357,33 @@ def build_parser() -> argparse.ArgumentParser:
 
   p_sync_learning = sub.add_parser("sync_learning_ledger")
   p_sync_learning.set_defaults(func=cmd_sync_learning_ledger)
+
+  p_activate = sub.add_parser("activate_next_bet")
+  p_activate.add_argument("--lesson-id", required=True)
+  p_activate.add_argument("--target-id", required=True)
+  p_activate.add_argument("--target-title", required=True)
+  p_activate.add_argument("--idea-id", required=True)
+  p_activate.add_argument("--idea-title", required=True)
+  p_activate.add_argument("--effect", required=True)
+  p_activate.add_argument("--owner")
+  p_activate.add_argument("--check", action="append")
+  p_activate.add_argument("--review-cadence", default="weekly")
+  p_activate.add_argument("--reversibility", default="high")
+  p_activate.add_argument("--maintenance", choices=SCORES, default="L")
+  p_activate.add_argument("--go-live-cost", dest="go_live_cost", choices=SCORES, default="L")
+  p_activate.add_argument("--maintenance-overhead", default="L", choices=SCORES)
+  p_activate.add_argument("--check-cost", default="L", choices=SCORES)
+  p_activate.add_argument("--tool-sprawl", default="L", choices=SCORES)
+  p_activate.add_argument("--driver")
+  p_activate.add_argument("--approver")
+  p_activate.add_argument("--contributor", action="append")
+  p_activate.add_argument("--informed", action="append")
+  p_activate.add_argument("--parallel-mode", choices=PARALLEL_MODES, default="serial")
+  p_activate.add_argument("--worktree", choices=WORKTREE_MODES, default="required")
+  p_activate.add_argument("--write-scope", action="append")
+  p_activate.add_argument("--state", choices=QUEUE_READY_STATES, default="shaped")
+  p_activate.add_argument("--notes")
+  p_activate.set_defaults(func=cmd_activate_next_bet)
   return parser
 
 
