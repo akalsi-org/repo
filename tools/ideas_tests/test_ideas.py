@@ -545,6 +545,232 @@ class IdeasCliTest(unittest.TestCase):
     self.assertIn("last_reviewed=2000-01-01T00:00:00+00:00", proc.stdout)
     self.assertIn("target: review-loop owner=ideas status=active active=0 done=0 blocked=0 lifecycle=idle archive_candidate=no review=review_missing", proc.stdout)
 
+  def test_report_synthesizes_next_bet_from_archived_outcomes(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+      {
+        "id": REVIEW_TARGET_ID,
+        "title": "Review loop",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "monthly",
+        "check": "./repo.sh ideas report",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    for ident, target, follow_up in (
+      ("keep-it", TARGET_ID, "keep the current report shape"),
+      ("best-next", REVIEW_TARGET_ID, "next real slice: add learning ledger from archived reviews"),
+    ):
+      self.run_ideas(
+        "add",
+        "--id",
+        ident,
+        "--title",
+        ident,
+        "--owner",
+        "ideas",
+        "--target",
+        target,
+        "--effect",
+        "clear backlog",
+        "--check",
+        "./repo.sh ideas report --cost",
+        "--reversibility",
+        "high",
+        "--maintenance",
+        "L",
+        "--parallel-mode",
+        "safe",
+        "--worktree",
+        "required",
+        "--write-scope",
+        "tools/ideas.py",
+        "--state",
+        "queued",
+      )
+      self.run_ideas("promote", ident, "--state", "done")
+      self.run_ideas(
+        "review",
+        ident,
+        "--expected",
+        "review captured",
+        "--actual",
+        "review stored",
+        "--follow-up",
+        follow_up,
+      )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn("next_bet_candidate: source=best-next target=review-loop owner=ideas", proc.stdout)
+    self.assertIn("action=next real slice: add learning ledger from archived reviews", proc.stdout)
+
+  def test_report_skips_follow_up_already_addressed_by_later_work(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "source",
+      "--title",
+      "Source",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "source", "--state", "done")
+    self.run_ideas(
+      "review",
+      "source",
+      "--expected",
+      "review captured",
+      "--actual",
+      "review stored",
+      "--follow-up",
+      "next real slice: add learning ledger from archived reviews",
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "learning-ledger",
+      "--title",
+      "Add learning ledger",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "capture archived reviews in a learning ledger",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "done",
+      "--notes",
+      "later work already captured the learning ledger follow-up",
+    )
+    self.run_ideas(
+      "review",
+      "learning-ledger",
+      "--expected",
+      "learning ledger captured",
+      "--actual",
+      "later work stored",
+      "--follow-up",
+      "keep the learning ledger narrow",
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertNotIn("next_bet_candidate:", proc.stdout)
+
+  def test_report_falls_back_to_learning_ledger_when_no_strong_follow_up_remains(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    for ident, follow_up in (
+      ("one", "keep the current report shape"),
+      ("two", "delay archive mechanics until pain appears"),
+      ("three", "watch for more real cycles before expanding fields"),
+    ):
+      self.run_ideas(
+        "add",
+        "--id",
+        ident,
+        "--title",
+        ident,
+        "--owner",
+        "ideas",
+        "--target",
+        TARGET_ID,
+        "--effect",
+        "clear backlog",
+        "--check",
+        "./repo.sh ideas report --cost",
+        "--reversibility",
+        "high",
+        "--maintenance",
+        "L",
+        "--parallel-mode",
+        "safe",
+        "--worktree",
+        "required",
+        "--write-scope",
+        "tools/ideas.py",
+        "--state",
+        "queued",
+      )
+      self.run_ideas("promote", ident, "--state", "done")
+      self.run_ideas(
+        "review",
+        ident,
+        "--expected",
+        "review captured",
+        "--actual",
+        "review stored",
+        "--follow-up",
+        follow_up,
+      )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn("next_bet_candidate: source=archived-outcomes target=learning-ledger owner=ideas", proc.stdout)
+    self.assertIn("action=add learning ledger from archived outcomes and reviews", proc.stdout)
+
   def test_unknown_target_rejected(self) -> None:
     proc = self.run_ideas(
       "add",

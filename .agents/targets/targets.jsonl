@@ -1,16 +1,18 @@
-{"check":"./repo.sh ideas ready","id":"backlog-artifacts","owner":"ideas","review_cadence":"monthly","status":"active","title":"Ideas, targets, backlog, execution, and review stay in repo truth"}
-{"check":"design-an-interface for targets schema","id":"target-ledger","owner":"ideas","review_cadence":"weekly","status":"active","title":"Ideas score against explicit repo goals"}
-{"check":"./repo.sh ideas report","id":"board-persistence","owner":"ideas","review_cadence":"monthly","status":"active","title":"Board output becomes durable repo truth"}
-{"check":"./repo.sh ideas ready","id":"readiness-gate","owner":"ideas","review_cadence":"monthly","status":"active","title":"Execution starts only from shaped testable records"}
-{"check":"./repo.sh ideas report --cost","id":"maintenance-hygiene","owner":"maintenance","review_cadence":"weekly","status":"active","title":"Repo self-regulates stale ideas, missing targets, and drift"}
-{"check":"./repo.sh ideas report","id":"outcome-review","owner":"ideas","review_cadence":"monthly","status":"active","title":"Execution and review close the autonomy loop"}
-{"check":"./repo.sh python3 -m unittest discover tools/ideas_tests","id":"cost-visibility","owner":"ideas","review_cadence":"monthly","status":"active","title":"Cost and reversibility stay durable backlog facts"}
-{"check":"./repo.sh agent_check --stale-only","id":"facet-contracts","owner":"commands","review_cadence":"monthly","status":"active","title":"Facet contracts stay explicit and cheap to validate"}
-{"check":"./repo.sh python3 -m unittest discover tools/agent_check_tests","id":"no-fallback","owner":"commands","review_cadence":"monthly","status":"active","title":"Internal machinery uses one explicit source of truth"}
-{"check":"./repo.sh ideas report --cost","id":"backlog-cost-drift","owner":"ideas","review_cadence":"weekly","status":"active","title":"Backlog drift and expensive work stay visible"}
-{"check":"design-an-interface for Facet budgets","id":"facet-budget","owner":"maintenance","review_cadence":"monthly","status":"active","title":"Facet sprawl stays visible without early enforcement"}
-{"check":"./repo.sh ideas report","id":"product-fork-pack","owner":"ideas","review_cadence":"monthly","status":"active","title":"Product forks inherit usable operating targets and cadence"}
-{"check":"./repo.sh python3 -m unittest discover tools/ideas_tests","id":"daci-truth","owner":"ideas","review_cadence":"monthly","status":"active","title":"Priority decisions keep DACI metadata in repo truth"}
-{"check":"./repo.sh ideas report --cost","id":"blocked-decision-visibility","owner":"maintenance","review_cadence":"weekly","status":"active","title":"Blocked decisions surface before execution stalls"}
-{"check":"./repo.sh ideas ready","id":"write-scope-visibility","owner":"ideas","review_cadence":"weekly","status":"active","title":"Unsafe write-scope overlap is visible before parallel work starts"}
-{"check":"./repo.sh ideas ready","id":"ready-batch-selection","owner":"ideas","review_cadence":"weekly","status":"active","title":"Backlog drain starts from repo-selected safe batches"}
+{"check":"./repo.sh ideas ready","id":"backlog-artifacts","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Ideas, targets, backlog, execution, and review stay in repo truth"}
+{"check":"design-an-interface for targets schema","id":"target-ledger","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Ideas score against explicit repo goals"}
+{"check":"./repo.sh ideas report","id":"board-persistence","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Board output becomes durable repo truth"}
+{"check":"./repo.sh ideas ready","id":"readiness-gate","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Execution starts only from shaped testable records"}
+{"check":"./repo.sh ideas report --cost","id":"maintenance-hygiene","owner":"maintenance","review_cadence":"weekly","status":"archived","title":"Repo self-regulates stale ideas, missing targets, and drift"}
+{"check":"./repo.sh ideas report","id":"outcome-review","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Execution and review close the autonomy loop"}
+{"check":"./repo.sh python3 -m unittest discover tools/ideas_tests","id":"cost-visibility","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Cost and reversibility stay durable backlog facts"}
+{"check":"./repo.sh agent_check --stale-only","id":"facet-contracts","owner":"commands","review_cadence":"monthly","status":"archived","title":"Facet contracts stay explicit and cheap to validate"}
+{"check":"./repo.sh python3 -m unittest discover tools/agent_check_tests","id":"no-fallback","owner":"commands","review_cadence":"monthly","status":"archived","title":"Internal machinery uses one explicit source of truth"}
+{"check":"./repo.sh ideas report --cost","id":"backlog-cost-drift","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Backlog drift and expensive work stay visible"}
+{"check":"design-an-interface for Facet budgets","id":"facet-budget","owner":"maintenance","review_cadence":"monthly","status":"archived","title":"Facet sprawl stays visible without early enforcement"}
+{"check":"./repo.sh ideas report","id":"product-fork-pack","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Product forks inherit usable operating targets and cadence"}
+{"check":"./repo.sh python3 -m unittest discover tools/ideas_tests","id":"daci-truth","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Priority decisions keep DACI metadata in repo truth"}
+{"check":"./repo.sh ideas report --cost","id":"blocked-decision-visibility","owner":"maintenance","review_cadence":"weekly","status":"archived","title":"Blocked decisions surface before execution stalls"}
+{"check":"./repo.sh ideas ready","id":"write-scope-visibility","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Unsafe write-scope overlap is visible before parallel work starts"}
+{"check":"./repo.sh ideas ready","id":"ready-batch-selection","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Backlog drain starts from repo-selected safe batches"}
+{"check":"./repo.sh ideas report --cost","id":"next-bet-refill","owner":"ideas","review_cadence":"weekly","status":"active","title":"Archived outcomes refill the queue with one best next bet"}
+{"check":"./repo.sh ideas report --cost","id":"learning-ledger","owner":"ideas","review_cadence":"monthly","status":"active","title":"Archived outcomes turn into durable lessons for future bets"}

@@ -41,6 +41,60 @@ CADENCE_INTERVALS = {
   "quarterly": timedelta(days=90),
   "yearly": timedelta(days=365),
 }
+NEXT_BET_ACTION_VERBS = (
+  "add",
+  "seed",
+  "surface",
+  "emit",
+  "capture",
+  "shape",
+  "make",
+  "use",
+  "promote",
+  "build",
+  "derive",
+  "synthesize",
+)
+NEXT_BET_DEFER_MARKERS = (
+  "only if",
+  "unless",
+  "only after",
+  "if ",
+)
+NEXT_BET_STOPWORDS = {
+  "after",
+  "around",
+  "board",
+  "cheap",
+  "current",
+  "decide",
+  "delay",
+  "fork",
+  "from",
+  "grow",
+  "just",
+  "keep",
+  "make",
+  "next",
+  "only",
+  "pass",
+  "point",
+  "real",
+  "right",
+  "seed",
+  "shape",
+  "should",
+  "simple",
+  "slice",
+  "that",
+  "then",
+  "this",
+  "unless",
+  "until",
+  "use",
+  "visible",
+  "when",
+}
 
 
 def utc_now() -> str:
@@ -344,6 +398,139 @@ def unreviewed_done_rows(rows: list[dict[str, object]]) -> list[dict[str, object
     row for row in rows
     if row.get("state") == "done" and not isinstance(row.get("outcome_review"), dict)
   ]
+
+
+def _follow_up_text(row: dict[str, object]) -> str | None:
+  outcome_review = row.get("outcome_review")
+  if not isinstance(outcome_review, dict):
+    return None
+  follow_up = outcome_review.get("follow_up")
+  if not isinstance(follow_up, str) or not follow_up.strip():
+    return None
+  return follow_up.strip()
+
+
+def _text_tokens(text: str) -> set[str]:
+  return {
+    token
+    for token in "".join(ch.lower() if ch.isalnum() else " " for ch in text).split()
+    if len(token) >= 4 and token not in NEXT_BET_STOPWORDS
+  }
+
+
+def _row_timestamp(row: dict[str, object]) -> datetime | None:
+  reviewed_at = _reviewed_at(row)
+  if reviewed_at is not None:
+    return reviewed_at
+  updated_at = row.get("updated_at") or row.get("created_at")
+  if not isinstance(updated_at, str) or not updated_at:
+    return None
+  try:
+    return datetime.fromisoformat(updated_at)
+  except ValueError:
+    return None
+
+
+def next_bet_follow_up_score(row: dict[str, object]) -> int:
+  follow_up = _follow_up_text(row)
+  if follow_up is None:
+    return -99
+  lowered = follow_up.lower()
+  score = 0
+  if lowered.startswith("next "):
+    score += 3
+  if lowered.startswith("next real slice:"):
+    score += 2
+  for verb in NEXT_BET_ACTION_VERBS:
+    if lowered.startswith(f"{verb} ") or f" {verb} " in lowered:
+      score += 2
+  if any(token in lowered for token in ("review", "learning", "cadence", "signal", "fork", "ready bet")):
+    score += 1
+  if lowered.startswith("keep ") or lowered.startswith("delay ") or lowered.startswith("watch "):
+    score -= 4
+  for marker in NEXT_BET_DEFER_MARKERS:
+    if marker in lowered:
+      score -= 2
+  return score
+
+
+def next_bet_candidate(
+    rows: list[dict[str, object]],
+    ledger: TargetLedger,
+) -> dict[str, object] | None:
+  archived_targets = {target.id for target in ledger.ordered if target.status == "archived"}
+  archived_reviewed: list[tuple[datetime, dict[str, object]]] = []
+  candidates: list[tuple[int, datetime, dict[str, object]]] = []
+  for row in rows:
+    if row.get("state") != "done":
+      continue
+    target = row.get("target")
+    if target not in archived_targets:
+      continue
+    follow_up = _follow_up_text(row)
+    reviewed_at = _reviewed_at(row)
+    if follow_up is None or reviewed_at is None:
+      continue
+    archived_reviewed.append((reviewed_at, row))
+    score = next_bet_follow_up_score(row)
+    if score <= 1:
+      continue
+    if follow_up_already_addressed(row, rows):
+      continue
+    candidates.append((score, reviewed_at, row))
+  if not candidates:
+    if len(archived_reviewed) < 3:
+      return None
+    reviewed_at, _ = max(archived_reviewed, key=lambda item: item[0])
+    return {
+      "source_id": "archived-outcomes",
+      "source_target": "learning-ledger",
+      "owner": "ideas",
+      "score": 1,
+      "reviewed_at": reviewed_at.isoformat(),
+      "action": "add learning ledger from archived outcomes and reviews",
+    }
+  score, reviewed_at, row = max(
+    candidates,
+    key=lambda item: (item[0], item[1], str(item[2].get("id"))),
+  )
+  return {
+    "source_id": str(row.get("id")),
+    "source_target": str(row.get("target")),
+    "owner": str(row.get("owner")),
+    "score": score,
+    "reviewed_at": reviewed_at.isoformat(),
+    "action": _follow_up_text(row) or "",
+  }
+
+
+def follow_up_already_addressed(
+    row: dict[str, object],
+    rows: list[dict[str, object]],
+) -> bool:
+  follow_up = _follow_up_text(row)
+  reviewed_at = _reviewed_at(row)
+  if follow_up is None or reviewed_at is None:
+    return False
+  source_id = row.get("id")
+  tokens = _text_tokens(follow_up)
+  if len(tokens) < 2:
+    return False
+  for other in rows:
+    if other.get("id") == source_id:
+      continue
+    other_time = _row_timestamp(other)
+    if other_time is None or other_time < reviewed_at:
+      continue
+    if other.get("state") not in ACTIVE_STATES | {"done"}:
+      continue
+    haystack = " ".join(
+      str(other.get(field, ""))
+      for field in ("id", "title", "effect", "notes")
+    )
+    if len(tokens & _text_tokens(haystack)) >= 2:
+      return True
+  return False
 
 
 def validate_row(
@@ -718,6 +905,7 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   unreviewed = unreviewed_done_rows(rows)
   target_lines = target_summary_rows(rows, ledger, now=now)
   unused_targets = unused_active_targets(rows, ledger)
+  candidate = next_bet_candidate(rows, ledger)
   print(f"ideas: {len(rows)}")
   print(f"validation_issues: {len(issues)}")
   print(f"stale: {len(stale)}")
@@ -740,6 +928,13 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
     print(f"  unused_target: {target_id}")
   for row in unreviewed:
     print(f"  unreviewed_done: {row.get('id')}")
+  if candidate is not None:
+    print(
+      "next_bet_candidate: "
+      f"source={candidate['source_id']} target={candidate['source_target']} "
+      f"owner={candidate['owner']} score={candidate['score']} "
+      f"reviewed_at={candidate['reviewed_at']} action={candidate['action']}"
+    )
   if args.cost:
     risky = cost_risk_rows(rows)
     print(f"cost_risks: {len(risky)}")
