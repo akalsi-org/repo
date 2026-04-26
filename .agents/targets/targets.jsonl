@@ -16,4 +16,5 @@
 {"check":"./repo.sh ideas ready","id":"ready-batch-selection","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Backlog drain starts from repo-selected safe batches"}
 {"check":"./repo.sh ideas report --cost","id":"next-bet-refill","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Archived outcomes refill the queue with one best next bet"}
 {"check":"./repo.sh ideas report --cost","id":"learning-ledger","owner":"ideas","review_cadence":"monthly","status":"archived","title":"Archived outcomes turn into durable lessons for future bets"}
-{"check":"./repo.sh ideas ready","id":"executable-bet-contract","owner":"ideas","review_cadence":"weekly","status":"active","title":"Best repo evidence turns into one startable bet with target, check, and write scope"}
+{"check":"./repo.sh ideas ready","id":"executable-bet-contract","owner":"ideas","review_cadence":"weekly","status":"archived","title":"Best repo evidence turns into one startable bet with target, check, and write scope"}
+{"check":"./repo.sh ideas report --cost","id":"learning-ledger-freshness","owner":"ideas","review_cadence":"weekly","status":"active","title":"Learning-ledger evidence stays current before report and activation depend on it"}

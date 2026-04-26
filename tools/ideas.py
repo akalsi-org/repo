@@ -493,6 +493,31 @@ def derive_learning_ledger_rows(
   return sorted(derived, key=lambda item: (str(item["reviewed_at"]), str(item["id"])))
 
 
+def learning_ledger_freshness_issues(
+    rows: list[dict[str, object]],
+    ledger: TargetLedger,
+    learning_rows: list[dict[str, object]],
+) -> list[str]:
+  expected = derive_learning_ledger_rows(rows, ledger)
+  expected_ids = {
+    str(row.get("id"))
+    for row in expected
+    if isinstance(row.get("id"), str) and row.get("id")
+  }
+  actual_ids = {
+    str(row.get("id"))
+    for row in learning_rows
+    if isinstance(row.get("id"), str) and row.get("id")
+  }
+  missing = sorted(expected_ids - actual_ids)
+  if not missing:
+    return []
+  parts: list[str] = ["learning_ledger stale:"]
+  parts.append(f"missing={','.join(missing)}")
+  parts.append("run_now=./repo.sh ideas sync_learning_ledger")
+  return [" ".join(parts)]
+
+
 def unused_active_targets(
     rows: list[dict[str, object]],
     ledger: TargetLedger,
@@ -1059,6 +1084,9 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
   learning_rows = load_learning_ledger_rows(root)
   if not learning_rows:
     raise SystemExit(f"{LEARNING_LEDGER_REL} missing or empty")
+  freshness_issues = learning_ledger_freshness_issues(rows, ledger, learning_rows)
+  if freshness_issues:
+    raise SystemExit("\n".join(freshness_issues))
   lesson = find_learning_row(learning_rows, args.lesson_id)
   if any(row.get("id") == args.idea_id for row in rows):
     raise SystemExit(f"idea `{args.idea_id}` already exists")
@@ -1207,6 +1235,7 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   target_lines = target_summary_rows(rows, ledger, now=now)
   unused_targets = unused_active_targets(rows, ledger)
   learning_rows = load_learning_ledger_rows(root)
+  issues.extend(learning_ledger_freshness_issues(rows, ledger, learning_rows))
   candidate = next_bet_candidate(
     rows,
     ledger,

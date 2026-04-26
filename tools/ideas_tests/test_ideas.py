@@ -896,6 +896,154 @@ class IdeasCliTest(unittest.TestCase):
     self.assertNotEqual(proc.returncode, 0)
     self.assertIn("missing or empty", proc.stderr)
 
+  def test_report_flags_stale_learning_ledger_drift(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "stale-source",
+      "--title",
+      "Stale source",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "stale-source", "--state", "done")
+    self.run_ideas(
+      "review",
+      "stale-source",
+      "--expected",
+      "review captured",
+      "--actual",
+      "new archived lesson exists",
+      "--follow-up",
+      "query lessons before activation",
+    )
+    write(self.root / ".agents/kb_src/tables/learning_ledger.jsonl", "")
+    proc = self.run_ideas("report", "--cost", check=False)
+    self.assertIn("validation_issues: 1", proc.stdout)
+    self.assertIn("issue: learning_ledger stale: missing=lesson_stale-source", proc.stdout)
+    self.assertIn("run_now=./repo.sh ideas sync_learning_ledger", proc.stdout)
+
+  def test_activate_next_bet_fails_on_stale_learning_ledger(self) -> None:
+    archived_targets = [
+      {
+        "id": TARGET_ID,
+        "title": "Smooth execution",
+        "owner": "ideas",
+        "status": "archived",
+        "review_cadence": "weekly",
+        "check": "./repo.sh ideas report --cost",
+      },
+    ]
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "".join(json.dumps(row) + "\n" for row in archived_targets),
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "stale-source",
+      "--title",
+      "Stale source",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report --cost",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "stale-source", "--state", "done")
+    self.run_ideas(
+      "review",
+      "stale-source",
+      "--expected",
+      "review captured",
+      "--actual",
+      "new archived lesson exists",
+      "--follow-up",
+      "query lessons before activation",
+    )
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps(
+        {
+          "id": "lesson_old",
+          "target_id": TARGET_ID,
+          "facet": "ideas",
+          "source_idea": "old",
+          "source_artifact": "tools/ideas.py",
+          "check": "./repo.sh ideas ready",
+          "lesson": "old lesson",
+          "follow_up": "old follow up",
+          "reviewed_at": "2026-04-26T12:00:00+00:00",
+        }
+      ) + "\n",
+    )
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--lesson-id",
+      "lesson_old",
+      "--target-id",
+      "activation-target",
+      "--target-title",
+      "Activation target",
+      "--idea-id",
+      "activation-idea",
+      "--idea-title",
+      "Activation idea",
+      "--effect",
+      "Queue refills from evidence-backed repo truth",
+      check=False,
+    )
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("learning_ledger stale: missing=lesson_stale-source", proc.stderr)
+    self.assertIn("run_now=./repo.sh ideas sync_learning_ledger", proc.stderr)
+
   def test_sync_learning_ledger_writes_archived_review_rows(self) -> None:
     archived_targets = [
       {
