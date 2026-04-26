@@ -177,6 +177,24 @@ class BootstrapPlanTest(unittest.TestCase):
     self.assertEqual(result.stdout, "batch 0: a\n")
     self.assertFalse(sentinel.exists())
 
+  def test_plan_does_not_fall_back_to_repo_config_tool_list(self) -> None:
+    write(
+      self.root / ".agents/repo.json",
+      """
+      {
+        "bootstrap": {
+          "tools": ["ghost"]
+        }
+      }
+      """,
+    )
+
+    result = self.run_plan()
+
+    self.assertEqual(result.returncode, 0, result.stderr)
+    self.assertEqual(result.stdout, "")
+    self.assertEqual(result.stderr, "")
+
 
 if __name__ == "__main__":
   unittest.main()

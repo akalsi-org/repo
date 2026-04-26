@@ -1,12 +1,15 @@
 {
   "name": "ideas",
-  "description": "Idea inventory, backlog gates, and target-driven execution intake.",
+  "description": "Idea inventory, target ledger, backlog gates, and target-driven execution intake.",
   "owns": [
     ".agents/ideas/**",
+    ".agents/targets/**",
     ".agents/facet/ideas/**",
     "tools/ideas",
     "tools/ideas.py",
-    "tools/ideas_tests/**"
+    "tools/ideas_tests/**",
+    "tools/targets.py",
+    "tools/targets_tests/**"
   ],
   "consider": [
     {
@@ -32,6 +35,11 @@
     {
       "name": "ideas_tests",
       "command": "./repo.sh python3 -m unittest discover tools/ideas_tests",
+      "closeout": true
+    },
+    {
+      "name": "targets_tests",
+      "command": "./repo.sh python3 -m unittest discover tools/targets_tests",
       "closeout": true
     },
     {

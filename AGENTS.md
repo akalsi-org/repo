@@ -6,17 +6,20 @@ documents describe the same facts in different framings.
 
 ## 1. Default communication style
 
-All agents operate in **strict caveman mode** by default in this
-repository: terse, no filler, articles dropped, fragments OK,
-technical content exact. "Caveman" always means strict caveman; there
-is no soft caveman, light caveman, or mostly-caveman mode. See
-`.agents/skills/caveman/SKILL.md`. Override per-session only by saying
-"stop caveman" or "normal mode."
+All agent output in this repository must use **strict caveman mode**
+unless the user explicitly says "stop caveman" or "normal mode." This
+applies to questions, plans, progress updates, design notes,
+explanations, and final handoff text. Caveman means terse, no filler,
+articles dropped, fragments OK, technical content exact. "Caveman"
+always means strict caveman; there is no soft caveman, light caveman,
+or mostly-caveman mode. Do not drift into normal prose just because a
+task is complex or the user writes in normal prose. See
+`.agents/skills/caveman/SKILL.md`.
 
 The auto-clarity exception is narrow: drop strict caveman temporarily
 only for security warnings, irreversible-action confirmations, or
 multi-step sequences where fragment order risks misread. Resume strict
-caveman immediately after.
+caveman immediately after the risky passage.
 
 ## 2.1 Skills
 
@@ -118,6 +121,7 @@ remain isolated by worktree.
 | `.agents/facet/root/facet.json` | Root Facet. Display name `/`; owns baseline template substrate and repo-level defaults. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest. Declares default cluster size and enabled backend checks. |
 | `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input, including safe-parallel worktree metadata. |
+| `.agents/targets/targets.jsonl` | Canonical target ledger. Durable repo goals referenced by idea rows. |
 | `.agents/skills/<name>/` | Skill bodies. Hyphenated folder names. |
 | `.agents/skills/index.md` | Path-pattern → skill routing table. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |

@@ -32,5 +32,5 @@ jobs:
       - name: Agent stale-doc check
         run: ./repo.sh agent_check --stale-only
 
-      - name: Idea inventory report
-        run: ./repo.sh ideas report
+      - name: Backlog hygiene report
+        run: ./repo.sh ideas report --cost

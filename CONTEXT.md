@@ -60,6 +60,11 @@ The path globs a backlog item may edit. Safe parallel work is allowed
 only when active backlog items use separate Worktrees and their Write
 Scopes do not overlap.
 
+**Target**:
+A durable repo goal stored in `.agents/targets/targets.jsonl`. Idea
+rows reference a **Target** by stable id instead of freeform prose so
+reports, maintenance, and review read one source of truth.
+
 **Toolchain**:
 Pinned third-party tools fetched into `.local/toolchain/$REPO_ARCH/`
 by per-tool specs under `bootstrap/tools/`. Specs may declare
@@ -80,9 +85,11 @@ subsystems.
   Template).
 - A **Product** has many **Facets** (mostly inherited from the
   Template).
+- A **Product** has many **Targets** captured in the target ledger.
 - An **Agent** consumes **Skills** + the **KB** + `AGENTS.md`.
 - Core tools consume **Facets** to derive command inventory, ownership,
   checks, and documentation expectations.
+- **Ideas** point at one **Target** by id.
 - Each path has one primary owner **Facet**. Other **Facets** may
   declare **Considerations**.
 - A **Toolchain** is shared by all **Worktrees** of a **Product**.

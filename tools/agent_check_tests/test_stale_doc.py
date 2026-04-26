@@ -109,6 +109,15 @@ class StaleDocTest(FixtureCase):
     issues = stale_doc_issues(self.root)
     self.assertTrue(_has(issues, "subsystem missing nested AGENTS.md: src/badmod"))
 
+  def test_subsystem_inventory_does_not_fall_back_to_default_glob(self) -> None:
+    config = json.loads((self.root / ".agents/repo.json").read_text())
+    config["facet_config"]["root"]["subsystem_descriptor_globs"] = []
+    (self.root / ".agents/repo.json").write_text(json.dumps(config))
+    write(self.root / "src/newmod/module.toml", "lib(name='newmod')\n")
+    write(self.root / "src/newmod/AGENTS.md", "# newmod\n")
+    issues = stale_doc_issues(self.root)
+    self.assertFalse(_has(issues, "subsystem missing from AGENTS.md §15: src/newmod"))
+
   def test_subsystem_in_agents_missing_on_disk(self) -> None:
     text = (self.root / "AGENTS.md").read_text()
     text = text.replace(

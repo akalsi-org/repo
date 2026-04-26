@@ -16,6 +16,10 @@ display name `/`. Every path should have one primary owner Facet;
 other Facets may declare `consider` entries for suggested
 thinking/routing only, never mandatory closeout checks. This preserves
 clear responsibility while keeping cross-cutting awareness cheap.
+Facet manifests are schema-checked eagerly: nested `consider`,
+`commands`, `checks`, and `docs` entries use fixed keys and required
+fields. Invalid or extra executable-style fields fail loudly instead
+of being ignored so repo truth stays declarative.
 
 ## Considered options
 

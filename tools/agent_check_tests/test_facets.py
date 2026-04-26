@@ -93,8 +93,7 @@ class FacetsTest(FixtureCase):
         "consider": [
           {
             "paths": ["tools/agent_check.py"],
-            "reason": "May affect doc validation.",
-            "checks": ["./repo.sh should_not_run"]
+            "reason": "May affect doc validation."
           }
         ],
         "commands": [],
@@ -107,6 +106,30 @@ class FacetsTest(FixtureCase):
     report = build_report(self.root)
     self.assertIn("consider `docs`: May affect doc validation.", report.notes)
     self.assertNotIn("./repo.sh should_not_run", report.closeout)
+
+  def test_consideration_rejects_unknown_keys(self) -> None:
+    write(
+      self.root / ".agents/facet/docs/facet.json",
+      """
+      {
+        "name": "docs",
+        "description": "docs",
+        "owns": ["docs/**"],
+        "consider": [
+          {
+            "paths": ["tools/agent_check.py"],
+            "reason": "May affect doc validation.",
+            "checks": ["./repo.sh should_not_run"]
+          }
+        ],
+        "commands": [],
+        "checks": [],
+        "docs": []
+      }
+      """,
+    )
+    with self.assertRaisesRegex(ValueError, "unknown key"):
+      load_facets(self.root)
 
   def test_changed_path_with_no_owner_is_reported(self) -> None:
     write(self.root / "unowned.txt", "orphan\n")
@@ -171,6 +194,44 @@ class FacetsTest(FixtureCase):
       "zero owner facets",
       report.ownership,
     )
+
+  def test_duplicate_command_names_fail_loudly(self) -> None:
+    write(
+      self.root / ".agents/facet/kb/facet.json",
+      """
+      {
+        "name": "kb",
+        "description": "KB",
+        "owns": ["tools/agent"],
+        "commands": [
+          {"name": "sample-tool", "purpose": "dup"}
+        ],
+        "checks": [],
+        "docs": []
+      }
+      """,
+    )
+    with self.assertRaisesRegex(ValueError, "already declared"):
+      load_facets(self.root)
+
+  def test_docs_projection_requires_shape(self) -> None:
+    write(
+      self.root / ".agents/facet/docs/facet.json",
+      """
+      {
+        "name": "docs",
+        "description": "docs",
+        "owns": ["docs/**"],
+        "commands": [],
+        "checks": [],
+        "docs": [
+          {"surface": "AGENTS.md"}
+        ]
+      }
+      """,
+    )
+    with self.assertRaisesRegex(ValueError, "docs.projection"):
+      load_facets(self.root)
 
 
 if __name__ == "__main__":

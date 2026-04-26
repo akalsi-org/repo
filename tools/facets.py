@@ -1,4 +1,4 @@
-"""Facet metadata loader.
+"""Facet metadata loader and query helpers.
 
 Facets are repo-level capability manifests under `.agents/facet/<name>/`.
 Core tools consume these declarations so repo truth can move out of
@@ -16,27 +16,107 @@ FACETS_DIR_REL = ".agents/facet"
 
 
 @dataclass(frozen=True)
+class Consideration:
+  paths: tuple[str, ...]
+  reason: str
+  skills: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Command:
+  name: str
+  purpose: str
+
+
+@dataclass(frozen=True)
+class Check:
+  name: str
+  command: str
+  closeout: bool
+
+
+@dataclass(frozen=True)
+class DocProjection:
+  surface: str
+  projection: str
+
+
+@dataclass(frozen=True)
 class Facet:
   name: str
   key: str
   description: str
   path: pathlib.Path
   owns: tuple[str, ...]
-  consider: tuple[dict[str, object], ...]
-  commands: tuple[dict[str, str], ...]
-  checks: tuple[dict[str, object], ...]
-  docs: tuple[dict[str, str], ...]
+  consider: tuple[Consideration, ...]
+  commands: tuple[Command, ...]
+  checks: tuple[Check, ...]
+  docs: tuple[DocProjection, ...]
 
 
-def _str_list(raw: object, *, field: str, source: pathlib.Path) -> tuple[str, ...]:
+@dataclass(frozen=True)
+class FacetBudget:
+  name: str
+  owns: int
+  considerations: int
+  commands: int
+  checks: int
+  closeout_checks: int
+  docs: int
+
+
+def _require_object(
+    raw: object,
+    *,
+    source: pathlib.Path,
+    field: str | None = None,
+) -> dict[str, object]:
+  label = str(source) if field is None else f"{source}:{field}"
+  if not isinstance(raw, dict):
+    raise ValueError(f"{label} must be object")
+  return dict(raw)
+
+
+def _ensure_allowed_keys(
+    raw: dict[str, object],
+    *,
+    allowed: set[str],
+    source: pathlib.Path,
+    field: str | None = None,
+) -> None:
+  extra = sorted(set(raw) - allowed)
+  if not extra:
+    return
+  label = str(source) if field is None else f"{source}:{field}"
+  extras = ", ".join(extra)
+  raise ValueError(f"{label} has unknown key(s): {extras}")
+
+
+def _require_non_empty_str(
+    raw: object,
+    *,
+    field: str,
+    source: pathlib.Path,
+) -> str:
+  if not isinstance(raw, str) or not raw:
+    raise ValueError(f"{source}:{field} must be a non-empty string")
+  return raw
+
+
+def _str_list(
+    raw: object,
+    *,
+    field: str,
+    source: pathlib.Path,
+) -> tuple[str, ...]:
   if raw is None:
     return ()
-  if not isinstance(raw, list) or not all(isinstance(v, str) for v in raw):
+  if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
     raise ValueError(f"{source}:{field} must be list[str]")
   return tuple(raw)
 
 
-def _dict_list(
+def _object_list(
     raw: object,
     *,
     field: str,
@@ -46,7 +126,168 @@ def _dict_list(
     return ()
   if not isinstance(raw, list) or not all(isinstance(v, dict) for v in raw):
     raise ValueError(f"{source}:{field} must be list[object]")
-  return tuple(dict(v) for v in raw)
+  return tuple(_require_object(v, source=source, field=field) for v in raw)
+
+
+def _load_considerations(
+    raw: object,
+    *,
+    source: pathlib.Path,
+) -> tuple[Consideration, ...]:
+  considerations: list[Consideration] = []
+  for entry in _object_list(raw, field="consider", source=source):
+    _ensure_allowed_keys(
+      entry,
+      allowed={"paths", "reason", "skills"},
+      source=source,
+      field="consider",
+    )
+    considerations.append(
+      Consideration(
+        paths=_str_list(entry.get("paths"), field="consider.paths", source=source),
+        reason=_require_non_empty_str(
+          entry.get("reason"),
+          field="consider.reason",
+          source=source,
+        ),
+        skills=_str_list(
+          entry.get("skills"),
+          field="consider.skills",
+          source=source,
+        ),
+      )
+    )
+  return tuple(considerations)
+
+
+def _load_commands(
+    raw: object,
+    *,
+    source: pathlib.Path,
+) -> tuple[Command, ...]:
+  commands: list[Command] = []
+  for entry in _object_list(raw, field="commands", source=source):
+    _ensure_allowed_keys(
+      entry,
+      allowed={"name", "purpose"},
+      source=source,
+      field="commands",
+    )
+    commands.append(
+      Command(
+        name=_require_non_empty_str(
+          entry.get("name"),
+          field="commands.name",
+          source=source,
+        ),
+        purpose=_require_non_empty_str(
+          entry.get("purpose"),
+          field="commands.purpose",
+          source=source,
+        ),
+      )
+    )
+  return tuple(commands)
+
+
+def _load_checks(
+    raw: object,
+    *,
+    source: pathlib.Path,
+) -> tuple[Check, ...]:
+  checks: list[Check] = []
+  for entry in _object_list(raw, field="checks", source=source):
+    _ensure_allowed_keys(
+      entry,
+      allowed={"name", "command", "closeout"},
+      source=source,
+      field="checks",
+    )
+    closeout = entry.get("closeout", False)
+    if not isinstance(closeout, bool):
+      raise ValueError(f"{source}:checks.closeout must be bool")
+    checks.append(
+      Check(
+        name=_require_non_empty_str(
+          entry.get("name"),
+          field="checks.name",
+          source=source,
+        ),
+        command=_require_non_empty_str(
+          entry.get("command"),
+          field="checks.command",
+          source=source,
+        ),
+        closeout=closeout,
+      )
+    )
+  return tuple(checks)
+
+
+def _load_docs(
+    raw: object,
+    *,
+    source: pathlib.Path,
+) -> tuple[DocProjection, ...]:
+  docs: list[DocProjection] = []
+  for entry in _object_list(raw, field="docs", source=source):
+    _ensure_allowed_keys(
+      entry,
+      allowed={"surface", "projection"},
+      source=source,
+      field="docs",
+    )
+    docs.append(
+      DocProjection(
+        surface=_require_non_empty_str(
+          entry.get("surface"),
+          field="docs.surface",
+          source=source,
+        ),
+        projection=_require_non_empty_str(
+          entry.get("projection"),
+          field="docs.projection",
+          source=source,
+        ),
+      )
+    )
+  return tuple(docs)
+
+
+def _load_facet(manifest: pathlib.Path) -> Facet:
+  raw = _require_object(
+    json.loads(manifest.read_text(encoding="utf-8")),
+    source=manifest,
+  )
+  _ensure_allowed_keys(
+    raw,
+    allowed={"name", "description", "owns", "consider", "commands", "checks", "docs"},
+    source=manifest,
+  )
+
+  key = manifest.parent.name
+  name = _require_non_empty_str(raw.get("name"), field="name", source=manifest)
+  if key == "root":
+    if name != "/":
+      raise ValueError(f"{manifest}:name must be '/' for root facet")
+  elif name != key:
+    raise ValueError(f"{manifest}:name must match facet directory")
+
+  return Facet(
+    name=name,
+    key=key,
+    description=_require_non_empty_str(
+      raw.get("description"),
+      field="description",
+      source=manifest,
+    ),
+    path=manifest,
+    owns=_str_list(raw.get("owns"), field="owns", source=manifest),
+    consider=_load_considerations(raw.get("consider"), source=manifest),
+    commands=_load_commands(raw.get("commands"), source=manifest),
+    checks=_load_checks(raw.get("checks"), source=manifest),
+    docs=_load_docs(raw.get("docs"), source=manifest),
+  )
 
 
 def load_facets(root: pathlib.Path) -> list[Facet]:
@@ -54,63 +295,16 @@ def load_facets(root: pathlib.Path) -> list[Facet]:
   if not facets_dir.exists():
     return []
 
-  facets: list[Facet] = []
-  for manifest in sorted(facets_dir.glob("*/facet.json")):
-    key = manifest.parent.name
-    raw = json.loads(manifest.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-      raise ValueError(f"{manifest} must contain a JSON object")
-
-    name = raw.get("name")
-    if not isinstance(name, str) or not name:
-      raise ValueError(f"{manifest}:name must be a non-empty string")
-    if key == "root":
-      if name != "/":
-        raise ValueError(f"{manifest}:name must be '/' for root facet")
-    elif name != key:
-      raise ValueError(f"{manifest}:name must match facet directory")
-
-    description = raw.get("description")
-    if not isinstance(description, str) or not description:
-      raise ValueError(f"{manifest}:description must be a non-empty string")
-
-    facets.append(
-      Facet(
-        name=name,
-        key=key,
-        description=description,
-        path=manifest,
-        owns=_str_list(raw.get("owns"), field="owns", source=manifest),
-        consider=tuple(
-          dict(v) for v in _dict_list(
-            raw.get("consider"),
-            field="consider",
-            source=manifest,
-          )
-        ),
-        commands=tuple(
-          dict(v) for v in _dict_list(
-            raw.get("commands"),
-            field="commands",
-            source=manifest,
-          )
-        ),
-        checks=tuple(
-          dict(v) for v in _dict_list(
-            raw.get("checks"),
-            field="checks",
-            source=manifest,
-          )
-        ),
-        docs=tuple(
-          dict(v) for v in _dict_list(
-            raw.get("docs"),
-            field="docs",
-            source=manifest,
-          )
-        ),
-      )
-    )
+  facets = [_load_facet(manifest) for manifest in sorted(facets_dir.glob("*/facet.json"))]
+  command_owner: dict[str, pathlib.Path] = {}
+  for facet in facets:
+    for command in facet.commands:
+      previous = command_owner.get(command.name)
+      if previous is not None:
+        raise ValueError(
+          f"{facet.path}:commands.name `{command.name}` already declared by {previous}"
+        )
+      command_owner[command.name] = facet.path
   return facets
 
 
@@ -141,11 +335,12 @@ def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:
   return any(glob_match(path, pattern) for pattern in patterns)
 
 
+def facet_keys(root: pathlib.Path) -> set[str]:
+  return {facet.key for facet in load_facets(root)}
+
+
 def owner_names(root: pathlib.Path, path: str) -> list[str]:
-  names: list[str] = []
-  for facet in load_facets(root):
-    if _matches_any(path, facet.owns):
-      names.append(facet.name)
+  names = [facet.name for facet in load_facets(root) if _matches_any(path, facet.owns)]
   return sorted(names)
 
 
@@ -167,13 +362,7 @@ def ownership_issues(root: pathlib.Path, paths: list[str]) -> list[str]:
 
 
 def command_names(root: pathlib.Path) -> list[str]:
-  names: set[str] = set()
-  for facet in load_facets(root):
-    for command in facet.commands:
-      name = command.get("name")
-      if isinstance(name, str) and name:
-        names.add(name)
-  return sorted(names)
+  return sorted({command.name for facet in load_facets(root) for command in facet.commands})
 
 
 def closeout_checks(root: pathlib.Path, paths: list[str]) -> list[str]:
@@ -182,11 +371,8 @@ def closeout_checks(root: pathlib.Path, paths: list[str]) -> list[str]:
     if not any(_matches_any(path, facet.owns) for path in paths):
       continue
     for check in facet.checks:
-      if check.get("closeout") is not True:
-        continue
-      command = check.get("command")
-      if isinstance(command, str) and command:
-        checks.add(command)
+      if check.closeout:
+        checks.add(check.command)
   return sorted(checks)
 
 
@@ -194,18 +380,28 @@ def consideration_notes(root: pathlib.Path, paths: list[str]) -> list[str]:
   notes: list[str] = []
   for facet in load_facets(root):
     for entry in facet.consider:
-      raw_patterns = entry.get("paths", [])
-      if not isinstance(raw_patterns, list) or not all(
-          isinstance(v, str) for v in raw_patterns):
-        raise ValueError(f"{facet.path}:consider.paths must be list[str]")
       if not any(
           glob_match(path, pattern)
           for path in paths
-          for pattern in raw_patterns
+          for pattern in entry.paths
       ):
         continue
-      reason = entry.get("reason")
-      if not isinstance(reason, str) or not reason:
-        raise ValueError(f"{facet.path}:consider.reason must be non-empty string")
-      notes.append(f"consider `{facet.name}`: {reason}")
+      notes.append(f"consider `{facet.name}`: {entry.reason}")
   return sorted(set(notes))
+
+
+def facet_budgets(root: pathlib.Path) -> list[FacetBudget]:
+  budgets: list[FacetBudget] = []
+  for facet in load_facets(root):
+    budgets.append(
+      FacetBudget(
+        name=facet.name,
+        owns=len(facet.owns),
+        considerations=len(facet.consider),
+        commands=len(facet.commands),
+        checks=len(facet.checks),
+        closeout_checks=sum(1 for check in facet.checks if check.closeout),
+        docs=len(facet.docs),
+      )
+    )
+  return budgets

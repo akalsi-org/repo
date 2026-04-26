@@ -10,12 +10,15 @@ import os
 import pathlib
 import sys
 from datetime import datetime, timezone
+from itertools import combinations
+from typing import Mapping
 
 ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
 if str(ROOT) not in sys.path:
   sys.path.insert(0, str(ROOT))
 
-from tools.facets import load_facets
+from tools.facets import facet_budgets, facet_keys, glob_match
+from tools.targets import TargetLedger, load_target_ledger
 
 
 IDEAS_REL = ".agents/ideas/ideas.jsonl"
@@ -26,6 +29,11 @@ QUEUE_READY_STATES = ("shaped", "decided", "queued")
 COST_FIELDS = ("go_live_cost", "maintenance_overhead", "check_cost", "tool_sprawl")
 PARALLEL_MODES = ("safe", "serial", "blocked")
 WORKTREE_MODES = ("required", "recommended", "optional")
+DACI_STR_FIELDS = ("driver", "approver")
+DACI_LIST_FIELDS = ("contributors", "informed")
+ACTIVE_STATES = {"seed", "shaped", "decided", "queued", "active"}
+READY_STATE_PRIORITY = {"queued": 2, "decided": 1, "shaped": 0}
+OUTCOME_REVIEW_FIELDS = ("expected", "actual", "follow_up", "reviewed_at")
 
 
 def utc_now() -> str:
@@ -62,11 +70,188 @@ def write_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
   path.write_text(text, encoding="utf-8")
 
 
-def facet_keys(root: pathlib.Path) -> set[str]:
-  return {facet.key for facet in load_facets(root)}
+def _list_str(
+    row: dict[str, object],
+    field: str,
+) -> list[str]:
+  value = row.get(field)
+  if not isinstance(value, list):
+    return []
+  return [item for item in value if isinstance(item, str)]
 
 
-def validate_row(root: pathlib.Path, row: dict[str, object]) -> list[str]:
+def _state_rank(row: dict[str, object]) -> int:
+  state = row.get("state")
+  if not isinstance(state, str):
+    return -1
+  return READY_STATE_PRIORITY.get(state, -1)
+
+
+def _write_scope(row: dict[str, object]) -> list[str]:
+  return _list_str(row, "write_scope")
+
+
+def _scope_overlaps(left: str, right: str) -> bool:
+  return glob_match(left, right) or glob_match(right, left)
+
+
+def overlapping_scopes(
+    left: dict[str, object],
+    right: dict[str, object],
+) -> list[str]:
+  overlaps: list[str] = []
+  for left_scope in _write_scope(left):
+    for right_scope in _write_scope(right):
+      if not _scope_overlaps(left_scope, right_scope):
+        continue
+      overlap = left_scope if left_scope == right_scope else f"{left_scope} <-> {right_scope}"
+      if overlap not in overlaps:
+        overlaps.append(overlap)
+  return overlaps
+
+
+def ready_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+  return [row for row in rows if is_queue_ready(row)]
+
+
+def ready_conflicts(
+    rows: list[dict[str, object]],
+) -> list[tuple[dict[str, object], dict[str, object], list[str]]]:
+  conflicts: list[tuple[dict[str, object], dict[str, object], list[str]]] = []
+  for left, right in combinations(ready_rows(rows), 2):
+    overlaps = overlapping_scopes(left, right)
+    if overlaps:
+      conflicts.append((left, right, overlaps))
+  return conflicts
+
+
+def _combo_batchable(combo: tuple[dict[str, object], ...]) -> bool:
+  if len(combo) <= 1:
+    return True
+  for left, right in combinations(combo, 2):
+    if left.get("parallel_mode") != "safe" or right.get("parallel_mode") != "safe":
+      return False
+    if overlapping_scopes(left, right):
+      return False
+  return True
+
+
+def recommended_ready_batch(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+  ready = sorted(
+    ready_rows(rows),
+    key=lambda row: (-_state_rank(row), str(row.get("id"))),
+  )
+  best: tuple[dict[str, object], ...] = ()
+  best_key = (-1, -1)
+  for size in range(1, len(ready) + 1):
+    for combo in combinations(ready, size):
+      if not _combo_batchable(combo):
+        continue
+      key = (len(combo), sum(_state_rank(row) for row in combo))
+      if key > best_key:
+        best = combo
+        best_key = key
+  return list(best)
+
+
+def _score_value(row: dict[str, object], field: str) -> str | None:
+  score = row.get("score")
+  if not isinstance(score, dict):
+    return None
+  value = score.get(field)
+  if not isinstance(value, str):
+    return None
+  return value
+
+
+def blocked_decision_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+  return [
+    row for row in rows
+    if row.get("decision_required") is True
+    and row.get("state") in ACTIVE_STATES
+  ]
+
+
+def cost_risk_reasons(row: dict[str, object]) -> list[str]:
+  reasons: list[str] = []
+  maintenance = row.get("maintenance")
+  if maintenance in {"M", "H"}:
+    reasons.append(f"maintenance={maintenance}")
+  for field in COST_FIELDS:
+    value = row.get(field)
+    if value in {"M", "H"}:
+      reasons.append(f"{field}={value}")
+  reversibility_score = _score_value(row, "reversibility")
+  if reversibility_score in {"M", "L"}:
+    reasons.append(f"reversibility_score={reversibility_score}")
+  else:
+    reversibility = row.get("reversibility")
+    if isinstance(reversibility, str) and reversibility:
+      lowered = reversibility.lower()
+      if (
+          "low" in lowered
+          or "medium" in lowered
+          or "irreversible" in lowered
+      ):
+        reasons.append(f"reversibility={reversibility}")
+  return reasons
+
+
+def cost_risk_rows(
+    rows: list[dict[str, object]],
+) -> list[tuple[dict[str, object], list[str]]]:
+  risky: list[tuple[dict[str, object], list[str]]] = []
+  for row in rows:
+    if row.get("state") not in ACTIVE_STATES:
+      continue
+    reasons = cost_risk_reasons(row)
+    if reasons:
+      risky.append((row, reasons))
+  return risky
+
+
+def target_summary_rows(
+    rows: list[dict[str, object]],
+    ledger: TargetLedger,
+) -> list[str]:
+  lines: list[str] = []
+  for target in ledger.ordered:
+    assigned = [row for row in rows if row.get("target") == target.id]
+    active = sum(1 for row in assigned if row.get("state") in ACTIVE_STATES)
+    done = sum(1 for row in assigned if row.get("state") == "done")
+    blocked = sum(1 for row in assigned if row.get("decision_required") is True)
+    lines.append(
+      f"{target.id} owner={target.owner} status={target.status} "
+      f"active={active} done={done} blocked={blocked}"
+    )
+  return lines
+
+
+def unused_active_targets(
+    rows: list[dict[str, object]],
+    ledger: TargetLedger,
+) -> list[str]:
+  used = {
+    str(row.get("target"))
+    for row in rows
+    if isinstance(row.get("target"), str)
+  }
+  return [target.id for target in ledger.active() if target.id not in used]
+
+
+def unreviewed_done_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+  return [
+    row for row in rows
+    if row.get("state") == "done" and not isinstance(row.get("outcome_review"), dict)
+  ]
+
+
+def validate_row(
+    root: pathlib.Path,
+    row: dict[str, object],
+    *,
+    ledger: TargetLedger,
+) -> list[str]:
   issues: list[str] = []
   ident = row.get("id")
   if not isinstance(ident, str) or not ident:
@@ -79,6 +264,7 @@ def validate_row(root: pathlib.Path, row: dict[str, object]) -> list[str]:
     issues.append(f"{ident or '<unknown>'}: owner missing")
   elif owner not in facet_keys(root):
     issues.append(f"{ident or '<unknown>'}: owner Facet `{owner}` missing")
+  issues.extend(ledger.validate_idea_row(row))
   checks = row.get("checks", [])
   if not isinstance(checks, list) or not all(isinstance(v, str) for v in checks):
     issues.append(f"{ident or '<unknown>'}: checks must be list[str]")
@@ -94,10 +280,12 @@ def validate_row(root: pathlib.Path, row: dict[str, object]) -> list[str]:
       issues.append(f"{ident or '<unknown>'}: {field} must be H, M, or L")
   parallel_mode = row.get("parallel_mode")
   if parallel_mode is not None and parallel_mode not in PARALLEL_MODES:
-    issues.append(f"{ident or '<unknown>'}: parallel_mode must be safe, serial, or blocked")
+    issues.append(
+      f"{ident or '<unknown>'}: parallel_mode must be safe, serial, or blocked")
   worktree = row.get("worktree")
   if worktree is not None and worktree not in WORKTREE_MODES:
-    issues.append(f"{ident or '<unknown>'}: worktree must be required, recommended, or optional")
+    issues.append(
+      f"{ident or '<unknown>'}: worktree must be required, recommended, or optional")
   write_scope = row.get("write_scope")
   if write_scope is not None and (
       not isinstance(write_scope, list)
@@ -105,10 +293,44 @@ def validate_row(root: pathlib.Path, row: dict[str, object]) -> list[str]:
       or not all(isinstance(v, str) and v for v in write_scope)
   ):
     issues.append(f"{ident or '<unknown>'}: write_scope must be non-empty list[str]")
+  for field in DACI_STR_FIELDS:
+    value = row.get(field)
+    if value is not None and (not isinstance(value, str) or not value):
+      issues.append(f"{ident or '<unknown>'}: {field} must be non-empty string")
+  for field in DACI_LIST_FIELDS:
+    value = row.get(field)
+    if value is not None and (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(v, str) and v for v in value)
+    ):
+      issues.append(f"{ident or '<unknown>'}: {field} must be non-empty list[str]")
+  outcome_review = row.get("outcome_review")
+  if outcome_review is not None:
+    if not isinstance(outcome_review, dict):
+      issues.append(f"{ident or '<unknown>'}: outcome_review must be object")
+    else:
+      expected = outcome_review.get("expected")
+      actual = outcome_review.get("actual")
+      follow_up = outcome_review.get("follow_up")
+      reviewed_at = outcome_review.get("reviewed_at")
+      if not isinstance(expected, str) or not expected:
+        issues.append(f"{ident or '<unknown>'}: outcome_review.expected must be non-empty string")
+      if not isinstance(actual, str) or not actual:
+        issues.append(f"{ident or '<unknown>'}: outcome_review.actual must be non-empty string")
+      if follow_up is not None and (not isinstance(follow_up, str) or not follow_up):
+        issues.append(f"{ident or '<unknown>'}: outcome_review.follow_up must be non-empty string")
+      if not isinstance(reviewed_at, str) or not reviewed_at:
+        issues.append(f"{ident or '<unknown>'}: outcome_review.reviewed_at must be non-empty string")
   return issues
 
 
-def validate_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> list[str]:
+def validate_rows(
+    root: pathlib.Path,
+    rows: list[dict[str, object]],
+    *,
+    ledger: TargetLedger,
+) -> list[str]:
   issues: list[str] = []
   seen: set[str] = set()
   for row in rows:
@@ -117,7 +339,7 @@ def validate_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> list[str
       if ident in seen:
         issues.append(f"duplicate idea id `{ident}`")
       seen.add(ident)
-    issues.extend(validate_row(root, row))
+    issues.extend(validate_row(root, row, ledger=ledger))
   return issues
 
 
@@ -173,12 +395,20 @@ def ready_suffix(row: dict[str, object]) -> str:
   write_scope = row.get("write_scope")
   if isinstance(write_scope, list) and write_scope:
     parts.append("scope=" + ",".join(str(v) for v in write_scope))
+  driver = row.get("driver")
+  approver = row.get("approver")
+  if isinstance(driver, str) and driver:
+    if isinstance(approver, str) and approver:
+      parts.append(f"daci={driver}->{approver}")
+    else:
+      parts.append(f"driver={driver}")
   return f" [{' '.join(parts)}]" if parts else ""
 
 
 def cmd_list(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
-  issues = validate_rows(root, rows)
+  ledger = load_target_ledger(root)
+  issues = validate_rows(root, rows, ledger=ledger)
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   if args.state:
@@ -200,6 +430,7 @@ def cmd_list(root: pathlib.Path, args: argparse.Namespace) -> int:
 
 def cmd_add(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
+  ledger = load_target_ledger(root)
   if any(row.get("id") == args.id for row in rows):
     raise SystemExit(f"idea `{args.id}` already exists")
   if args.owner not in facet_keys(root):
@@ -224,13 +455,24 @@ def cmd_add(root: pathlib.Path, args: argparse.Namespace) -> int:
     value = getattr(args, field)
     if value is not None:
       row[field] = value
+  for field in DACI_STR_FIELDS:
+    value = getattr(args, field)
+    if value is not None:
+      row[field] = value
+  daci_list_args = {
+    "contributors": args.contributor,
+    "informed": args.informed,
+  }
+  for field, value in daci_list_args.items():
+    if value is not None:
+      row[field] = parse_check(value)
   if args.parallel_mode is not None:
     row["parallel_mode"] = args.parallel_mode
   if args.worktree is not None:
     row["worktree"] = args.worktree
   if args.write_scope is not None:
     row["write_scope"] = parse_check(args.write_scope)
-  issues = validate_row(root, row)
+  issues = validate_row(root, row, ledger=ledger)
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   rows.append(row)
@@ -241,6 +483,7 @@ def cmd_add(root: pathlib.Path, args: argparse.Namespace) -> int:
 
 def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
+  ledger = load_target_ledger(root)
   row = find_row(rows, args.id)
   row["score"] = {
     "return": args.return_score,
@@ -252,6 +495,9 @@ def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
     "verdict": args.verdict,
   }
   row["updated_at"] = utc_now()
+  issues = validate_rows(root, rows, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   write_rows(root, rows)
   print(f"scored {args.id}")
   return 0
@@ -259,14 +505,18 @@ def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
 
 def cmd_promote(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
+  ledger = load_target_ledger(root)
   row = find_row(rows, args.id)
   blockers = queue_blockers(row)
   if args.state == "queued" and blockers:
     raise SystemExit(
       "cannot queue: " + ", ".join(blockers)
-    )
+  )
   row["state"] = args.state
   row["updated_at"] = utc_now()
+  issues = validate_rows(root, rows, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   write_rows(root, rows)
   print(f"{args.id} -> {args.state}")
   return 0
@@ -274,39 +524,80 @@ def cmd_promote(root: pathlib.Path, args: argparse.Namespace) -> int:
 
 def cmd_park(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
+  ledger = load_target_ledger(root)
   row = find_row(rows, args.id)
   row["state"] = "parked"
   row["park_reason"] = args.reason
   row["updated_at"] = utc_now()
+  issues = validate_rows(root, rows, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   write_rows(root, rows)
   print(f"parked {args.id}")
+  return 0
+
+
+def cmd_review(root: pathlib.Path, args: argparse.Namespace) -> int:
+  rows = load_rows(root)
+  ledger = load_target_ledger(root)
+  row = find_row(rows, args.id)
+  if row.get("state") != "done":
+    raise SystemExit("can review only done ideas")
+  row["outcome_review"] = {
+    "expected": args.expected,
+    "actual": args.actual,
+    "follow_up": args.follow_up or "",
+    "reviewed_at": utc_now(),
+  }
+  issues = validate_row(root, row, ledger=ledger)
+  if issues:
+    raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
+  row["updated_at"] = utc_now()
+  write_rows(root, rows)
+  print(f"reviewed {args.id}")
   return 0
 
 
 def cmd_ready(root: pathlib.Path, args: argparse.Namespace) -> int:
   del args
   rows = load_rows(root)
-  issues = validate_rows(root, rows)
+  ledger = load_target_ledger(root)
+  issues = validate_rows(root, rows, ledger=ledger)
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
-  ready = [row for row in rows if is_queue_ready(row)]
+  ready = ready_rows(rows)
   blocked = [
     (row, readiness_blockers(row))
     for row in rows
     if row.get("state") in QUEUE_READY_STATES and not is_queue_ready(row)
   ]
+  conflicts = ready_conflicts(rows)
+  batch = recommended_ready_batch(rows)
   if not ready:
     print("ready: none")
   for row in ready:
     print(f"{row['id']}: {row.get('title', '')}{ready_suffix(row)}")
   for row, blockers in blocked:
     print(f"blocked: {row.get('id')}: {', '.join(blockers)}")
+  if conflicts:
+    for left, right, overlaps in conflicts:
+      print(
+        f"conflict: {left.get('id')} <-> {right.get('id')}: "
+        + ", ".join(overlaps)
+      )
+  else:
+    print("conflicts: none")
+  if batch:
+    print("recommended_batch: " + ", ".join(str(row.get("id")) for row in batch))
+  else:
+    print("recommended_batch: none")
   return 0
 
 
 def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
-  issues = validate_rows(root, rows)
+  ledger = load_target_ledger(root)
+  issues = validate_rows(root, rows, ledger=ledger)
   now = datetime.now(timezone.utc)
   stale: list[dict[str, object]] = []
   for row in rows:
@@ -323,13 +614,45 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
       continue
     if age.days >= args.stale_days:
       stale.append(row)
+  blocked = blocked_decision_rows(rows)
+  unreviewed = unreviewed_done_rows(rows)
+  target_lines = target_summary_rows(rows, ledger)
+  unused_targets = unused_active_targets(rows, ledger)
   print(f"ideas: {len(rows)}")
   print(f"validation_issues: {len(issues)}")
   print(f"stale: {len(stale)}")
+  print(f"blocked_decisions: {len(blocked)}")
+  print(f"targets: {len(ledger.ordered)}")
+  print(f"unused_active_targets: {len(unused_targets)}")
+  print(f"done_without_review: {len(unreviewed)}")
   for issue in issues:
     print(f"  issue: {issue}")
   for row in stale:
     print(f"  stale: {row.get('id')} state={row.get('state')}")
+  for row in blocked:
+    print(
+      f"  blocked_decision: {row.get('id')} owner={row.get('owner')} "
+      f"state={row.get('state')}"
+    )
+  for target_line in target_lines:
+    print(f"  target: {target_line}")
+  for target_id in unused_targets:
+    print(f"  unused_target: {target_id}")
+  for row in unreviewed:
+    print(f"  unreviewed_done: {row.get('id')}")
+  if args.cost:
+    risky = cost_risk_rows(rows)
+    print(f"cost_risks: {len(risky)}")
+    for row, reasons in risky:
+      print(f"  cost_risk: {row.get('id')} {' '.join(reasons)}")
+    budgets = facet_budgets(root)
+    print(f"facet_budgets: {len(budgets)}")
+    for budget in budgets:
+      print(
+        f"  facet_budget: {budget.name} owns={budget.owns} "
+        f"consider={budget.considerations} commands={budget.commands} "
+        f"checks={budget.checks} closeout={budget.closeout_checks} docs={budget.docs}"
+      )
   return 1 if issues else 0
 
 
@@ -357,6 +680,10 @@ def build_parser() -> argparse.ArgumentParser:
   p_add.add_argument("--maintenance-overhead", choices=SCORES)
   p_add.add_argument("--check-cost", choices=SCORES)
   p_add.add_argument("--tool-sprawl", choices=SCORES)
+  p_add.add_argument("--driver")
+  p_add.add_argument("--approver")
+  p_add.add_argument("--contributor", action="append")
+  p_add.add_argument("--informed", action="append")
   p_add.add_argument("--parallel-mode", choices=PARALLEL_MODES)
   p_add.add_argument("--worktree", choices=WORKTREE_MODES)
   p_add.add_argument("--write-scope", action="append")
@@ -386,11 +713,19 @@ def build_parser() -> argparse.ArgumentParser:
   p_park.add_argument("--reason", required=True)
   p_park.set_defaults(func=cmd_park)
 
+  p_review = sub.add_parser("review")
+  p_review.add_argument("id")
+  p_review.add_argument("--expected", required=True)
+  p_review.add_argument("--actual", required=True)
+  p_review.add_argument("--follow-up")
+  p_review.set_defaults(func=cmd_review)
+
   p_ready = sub.add_parser("ready")
   p_ready.set_defaults(func=cmd_ready)
 
   p_report = sub.add_parser("report")
   p_report.add_argument("--stale-days", type=int, default=30)
+  p_report.add_argument("--cost", action="store_true")
   p_report.set_defaults(func=cmd_report)
   return parser
 

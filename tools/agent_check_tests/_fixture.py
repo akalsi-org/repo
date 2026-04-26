@@ -6,7 +6,9 @@ test can mutate one piece and verify a single check fires.
 """
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -119,20 +121,8 @@ class TempRepo:
 
   def __init__(self) -> None:
     self._td = tempfile.TemporaryDirectory()
-    self.root = Path(self._td.name)
-    self._init_minimal()
-
-  def _init_minimal(self) -> None:
-    write(self.root / "AGENTS.md", AGENTS_MD)
-    write(self.root / ".agents/repo.json", REPO_JSON)
-    write(self.root / ".agents/facet/commands/facet.json", COMMANDS_FACET)
-    write(self.root / ".agents/skills/index.md", SKILL_INDEX)
-    write(self.root / ".agents/skills/doc-sync/SKILL.md", DOC_SYNC_SKILL)
-    write(self.root / "tools/sample-tool", "#!/bin/sh\nexit 0\n")
-    (self.root / "tools/sample-tool").chmod(0o755)
-    _git(["init", "-q", "-b", "main"], self.root)
-    _git(["add", "-A"], self.root)
-    _git(["commit", "-q", "-m", "init"], self.root)
+    self.root = Path(self._td.name) / "repo"
+    shutil.copytree(_seed_repo_root(), self.root)
 
   def cleanup(self) -> None:
     self._td.cleanup()
@@ -147,3 +137,35 @@ class FixtureCase(unittest.TestCase):
 
   def tearDown(self) -> None:
     self.repo.cleanup()
+
+
+_SEED_TEMP: tempfile.TemporaryDirectory[str] | None = None
+_SEED_ROOT: Path | None = None
+
+
+def _seed_repo_root() -> Path:
+  global _SEED_TEMP, _SEED_ROOT
+  if _SEED_ROOT is not None:
+    return _SEED_ROOT
+  _SEED_TEMP = tempfile.TemporaryDirectory()
+  _SEED_ROOT = Path(_SEED_TEMP.name) / "seed"
+  write(_SEED_ROOT / "AGENTS.md", AGENTS_MD)
+  write(_SEED_ROOT / ".agents/repo.json", REPO_JSON)
+  write(_SEED_ROOT / ".agents/facet/commands/facet.json", COMMANDS_FACET)
+  write(_SEED_ROOT / ".agents/skills/index.md", SKILL_INDEX)
+  write(_SEED_ROOT / ".agents/skills/doc-sync/SKILL.md", DOC_SYNC_SKILL)
+  write(_SEED_ROOT / "tools/sample-tool", "#!/bin/sh\nexit 0\n")
+  (_SEED_ROOT / "tools/sample-tool").chmod(0o755)
+  _git(["init", "-q", "-b", "main"], _SEED_ROOT)
+  _git(["add", "-A"], _SEED_ROOT)
+  _git(["commit", "-q", "-m", "init"], _SEED_ROOT)
+  atexit.register(_cleanup_seed_repo)
+  return _SEED_ROOT
+
+
+def _cleanup_seed_repo() -> None:
+  global _SEED_TEMP, _SEED_ROOT
+  if _SEED_TEMP is not None:
+    _SEED_TEMP.cleanup()
+  _SEED_TEMP = None
+  _SEED_ROOT = None

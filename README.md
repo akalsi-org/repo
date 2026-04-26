@@ -52,6 +52,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `.agents/facet/maintenance/` | Scheduled repo upkeep ownership, including CI cache warming. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest: default cluster size, shared service port, host port base, and enabled backend checks. |
 | `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input, including safe-parallel worktree metadata. |
+| `.agents/targets/targets.jsonl` | Canonical target ledger: durable repo goals referenced by idea rows. |
 | `.agents/kb_src/core.jsonl` | Durable agent KB facts. |
 | `.agents/repo.json` | Per-product knobs and Facet configuration. |
 | `bootstrap/fetch_binary.sh` | Generic helper: pinned binary tarball → `.local/toolchain/$ARCH`. |
@@ -82,9 +83,12 @@ symlinks:
 All three agents read the same skill bodies. Per-agent settings
 remain agent-local (e.g. `.claude/settings.local.json`).
 
-This template defaults to **caveman mode** for all agent
-communication — terse, no filler, technical content exact. Override
-per-session by saying "stop caveman" or "normal mode."
+This template defaults to **strict caveman mode** for all agent
+communication. Agents should keep caveman wording in questions,
+progress updates, plans, designs, explanations, and final handoff text
+unless the user explicitly says "stop caveman" or "normal mode."
+Caveman here means terse, no filler, fragments OK, technical content
+exact.
 
 ## Naming rules
 

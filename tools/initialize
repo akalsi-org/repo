@@ -33,6 +33,8 @@ REPO_JSON = REPO_ROOT / ".agents" / "repo.json"
 LICENSE_PATH = REPO_ROOT / "LICENSE"
 README_PATH = REPO_ROOT / "README.md"
 CONTEXT_PATH = REPO_ROOT / "CONTEXT.md"
+TARGETS_PATH = REPO_ROOT / ".agents" / "targets" / "targets.jsonl"
+IDEAS_PATH = REPO_ROOT / ".agents" / "ideas" / "ideas.jsonl"
 ADR_DIR = REPO_ROOT / "docs" / "adr"
 ADR_INDEX = ADR_DIR / "index.md"
 FIRST_ADR = ADR_DIR / "0001_template_adoption.md"
@@ -143,6 +145,8 @@ Every command goes through `./repo.sh <verb> [args]`:
 - `CONTEXT.md` — domain language for this product.
 - `docs/adr/` — architectural decision records.
 - `.agents/` — skills, KB sources, repo.json.
+- `.agents/targets/targets.jsonl` — durable target ledger for this Product.
+- `.agents/ideas/ideas.jsonl` — executable backlog and review loop.
 - `bootstrap/` — toolchain fetcher helpers + per-tool specs.
 - `tools/` — every command exposed via `./repo.sh`.
 - `.local/` — toolchain cache, stamps, build state. Not committed.
@@ -212,6 +216,59 @@ because {knobs['name']} is intended for sale; permissive licenses
         FIRST_ADR.write_text(body)
 
 
+def seed_operating_pack(knobs: dict) -> None:
+    if not TARGETS_PATH.exists():
+        TARGETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        targets = [
+            {
+                "id": "product-operating-loop",
+                "title": "Product operating loop in repo truth",
+                "owner": "ideas",
+                "status": "active",
+                "review_cadence": "monthly",
+                "check": "./repo.sh ideas report --cost",
+            },
+            {
+                "id": "product-release-surface",
+                "title": "Product release surface stays explicit",
+                "owner": "commands",
+                "status": "active",
+                "review_cadence": "monthly",
+                "check": "./repo.sh agent_check --stale-only",
+            },
+        ]
+        TARGETS_PATH.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in targets)
+        )
+
+    if not IDEAS_PATH.exists():
+        IDEAS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+        ideas = [
+            {
+                "id": "product-shape-operating-loop",
+                "title": "Shape first product operating loop",
+                "owner": "ideas",
+                "state": "shaped",
+                "target": "product-operating-loop",
+                "effect": "Product priorities move into repo-local truth instead of chat memory.",
+                "checks": ["./repo.sh ideas ready"],
+                "reversibility": "high",
+                "maintenance": "L",
+                "decision_required": False,
+                "notes": "Seeded by initialize so the Product starts with one durable next step.",
+                "created_at": now,
+                "updated_at": now,
+                "parallel_mode": "safe",
+                "worktree": "required",
+                "write_scope": [".agents/ideas/**", ".agents/targets/**", "CONTEXT.md"],
+            },
+        ]
+        IDEAS_PATH.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in ideas)
+        )
+
+
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> int:
     print(f"$ {' '.join(cmd)}")
     proc = subprocess.run(cmd, cwd=cwd or REPO_ROOT)
@@ -243,6 +300,7 @@ def main() -> int:
     render_readme(knobs)
     seed_context(knobs)
     seed_first_adr(knobs)
+    seed_operating_pack(knobs)
 
     repo_sh = str(REPO_ROOT / "repo.sh")
     run([repo_sh, "setup"], check=False)

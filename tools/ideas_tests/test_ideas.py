@@ -1,13 +1,38 @@
 from __future__ import annotations
 
+import contextlib
+import importlib.util
 import json
+import io
 import pathlib
-import subprocess
+import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+TARGET_ID = "smooth-execution"
+REVIEW_TARGET_ID = "review-loop"
+
+
+def load_ideas_module():
+  spec = importlib.util.spec_from_file_location("ideas_cmd", ROOT / "tools/ideas.py")
+  assert spec is not None
+  assert spec.loader is not None
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  return module
+
+
+ideas = load_ideas_module()
+
+
+@dataclass
+class RunResult:
+  returncode: int
+  stdout: str
+  stderr: str
 
 
 def write(path: pathlib.Path, text: str) -> None:
@@ -33,25 +58,51 @@ class IdeasCliTest(unittest.TestCase):
       ),
     )
     write(self.root / ".agents/ideas/ideas.jsonl", "")
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps(
+          {
+            "id": TARGET_ID,
+            "title": "Smooth execution",
+            "owner": "ideas",
+            "status": "active",
+            "review_cadence": "weekly",
+            "check": "./repo.sh ideas report --cost",
+          }
+        ),
+        json.dumps(
+          {
+            "id": REVIEW_TARGET_ID,
+            "title": "Review loop",
+            "owner": "ideas",
+            "status": "active",
+            "review_cadence": "monthly",
+            "check": "./repo.sh ideas report",
+          }
+        ),
+      ]) + "\n",
+    )
 
   def tearDown(self) -> None:
     self.tmp.cleanup()
 
-  def run_ideas(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(
-      [
-        "python3",
-        str(ROOT / "tools/ideas.py"),
-        "--root",
-        str(self.root),
-        *args,
-      ],
-      cwd=ROOT,
-      check=False,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-    )
+  def run_ideas(self, *args: str, check: bool = True) -> RunResult:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+      try:
+        ideas.main(["--root", str(self.root), *args])
+      except SystemExit as exc:
+        if isinstance(exc.code, int):
+          code = exc.code
+        elif exc.code is None:
+          code = 0
+        else:
+          print(exc.code, file=sys.stderr)
+          code = 1
+    proc = RunResult(code, stdout.getvalue(), stderr.getvalue())
     if check and proc.returncode != 0:
       self.fail(f"ideas failed: {proc.stderr}")
     return proc
@@ -66,7 +117,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -108,7 +159,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -135,7 +186,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -166,7 +217,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -194,7 +245,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -225,7 +276,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -252,7 +303,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "ideas",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
@@ -287,6 +338,227 @@ class IdeasCliTest(unittest.TestCase):
     self.assertEqual(row["worktree"], "required")
     self.assertEqual(row["write_scope"], ["tools/ideas.py"])
 
+  def test_add_records_daci_metadata(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "owned",
+      "--title",
+      "Owned idea",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--driver",
+      "chief-of-staff",
+      "--approver",
+      "ceo",
+      "--contributor",
+      "ideas",
+      "--contributor",
+      "maintenance",
+      "--informed",
+      "commands",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+    )
+    proc = self.run_ideas("list", "--json")
+    payload = json.loads(proc.stdout)
+    row = payload["ideas"][0]
+    self.assertEqual(row["driver"], "chief-of-staff")
+    self.assertEqual(row["approver"], "ceo")
+    self.assertEqual(row["contributors"], ["ideas", "maintenance"])
+    self.assertEqual(row["informed"], ["commands"])
+
+  def test_ready_reports_conflicts_and_recommended_batch(self) -> None:
+    for ident, scope in (
+      ("alpha", "tools/ideas.py"),
+      ("beta", "tools/ideas.py"),
+      ("gamma", "tools/agent_check.py"),
+    ):
+      self.run_ideas(
+        "add",
+        "--id",
+        ident,
+        "--title",
+        ident.title(),
+        "--owner",
+        "ideas",
+        "--target",
+        TARGET_ID,
+        "--effect",
+        "clear backlog",
+        "--check",
+        "./repo.sh ideas ready",
+        "--reversibility",
+        "high",
+        "--maintenance",
+        "L",
+        "--parallel-mode",
+        "safe",
+        "--worktree",
+        "required",
+        "--write-scope",
+        scope,
+        "--state",
+        "queued",
+      )
+    proc = self.run_ideas("ready")
+    self.assertIn("conflict: alpha <-> beta: tools/ideas.py", proc.stdout)
+    self.assertIn("recommended_batch: alpha, gamma", proc.stdout)
+
+  def test_report_lists_blocked_decisions_and_cost_risks(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "blocked",
+      "--title",
+      "Blocked",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "medium",
+      "--maintenance",
+      "M",
+      "--state",
+      "shaped",
+      "--decision-required",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+    )
+    self.run_ideas(
+      "add",
+      "--id",
+      "costly",
+      "--title",
+      "Costly",
+      "--owner",
+      "ideas",
+      "--target",
+      TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "low",
+      "--maintenance",
+      "L",
+      "--maintenance-overhead",
+      "M",
+      "--tool-sprawl",
+      "H",
+      "--state",
+      "queued",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/agent_check.py",
+    )
+    proc = self.run_ideas("report", "--cost")
+    self.assertIn("blocked_decisions: 1", proc.stdout)
+    self.assertIn("blocked_decision: blocked owner=ideas state=shaped", proc.stdout)
+    self.assertIn("cost_risk: blocked maintenance=M reversibility=medium", proc.stdout)
+    self.assertIn(
+      "cost_risk: costly maintenance_overhead=M tool_sprawl=H reversibility=low",
+      proc.stdout,
+    )
+    self.assertIn(f"target: {TARGET_ID} owner=ideas", proc.stdout)
+    self.assertIn("facet_budget: ideas", proc.stdout)
+
+  def test_unknown_target_rejected(self) -> None:
+    proc = self.run_ideas(
+      "add",
+      "--id",
+      "bad-target",
+      "--title",
+      "Bad target",
+      "--owner",
+      "ideas",
+      "--target",
+      "missing-target",
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas ready",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      check=False,
+    )
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("unknown target `missing-target`", proc.stderr)
+
+  def test_review_records_outcome(self) -> None:
+    self.run_ideas(
+      "add",
+      "--id",
+      "done-idea",
+      "--title",
+      "Done idea",
+      "--owner",
+      "ideas",
+      "--target",
+      REVIEW_TARGET_ID,
+      "--effect",
+      "clear backlog",
+      "--check",
+      "./repo.sh ideas report",
+      "--reversibility",
+      "high",
+      "--maintenance",
+      "L",
+      "--parallel-mode",
+      "safe",
+      "--worktree",
+      "required",
+      "--write-scope",
+      "tools/ideas.py",
+      "--state",
+      "queued",
+    )
+    self.run_ideas("promote", "done-idea", "--state", "done")
+    self.run_ideas(
+      "review",
+      "done-idea",
+      "--expected",
+      "visible review loop",
+      "--actual",
+      "review stored in row",
+      "--follow-up",
+      "keep cadence monthly",
+    )
+    proc = self.run_ideas("list", "--json")
+    payload = json.loads(proc.stdout)
+    row = payload["ideas"][0]
+    self.assertEqual(row["outcome_review"]["expected"], "visible review loop")
+    self.assertEqual(row["outcome_review"]["actual"], "review stored in row")
+
   def test_unknown_owner_rejected(self) -> None:
     proc = self.run_ideas(
       "add",
@@ -297,7 +569,7 @@ class IdeasCliTest(unittest.TestCase):
       "--owner",
       "missing",
       "--target",
-      "smooth execution",
+      TARGET_ID,
       "--effect",
       "clear backlog",
       "--check",
