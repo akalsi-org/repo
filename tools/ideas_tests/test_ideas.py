@@ -1768,6 +1768,9 @@ class BatchSafeParallelTest(unittest.TestCase):
   def setUp(self) -> None:
     self.tmp = tempfile.TemporaryDirectory()
     self.root = pathlib.Path(self.tmp.name)
+    # Set git config for tests
+    subprocess.run(["git", "config", "--global", "user.name", "Test User"], check=False)
+    subprocess.run(["git", "config", "--global", "user.email", "test@example.com"], check=False)
     write(
       self.root / ".agents/facet/ideas/facet.json",
       json.dumps(
