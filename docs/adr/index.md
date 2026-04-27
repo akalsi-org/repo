@@ -13,3 +13,4 @@
 | 0009 | [Cluster-first system tests](0009_cluster_first_system_tests.md) |
 | 0010 | [Declared bootstrap tool dependencies](0010_declared_bootstrap_tool_dependencies.md) |
 | 0011 | [Skills portfolio lifecycle tiers](0011_skills_portfolio_lifecycle_tiers.md) |
+| 0012 | [Governance Pack v2 — Facet-Scoped Budget + Delegation](0012_governance_pack_v2_facet_scoped.md) |

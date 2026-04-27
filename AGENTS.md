@@ -110,6 +110,11 @@ reusable bootstrap substrate.
   repo enters that lifecycle phase; Tier 3 (Template-Admin) are operator-
   only and infrequent. Do not prune tier 2 skills to reduce template
   complexity — products fork, inherit all skills, and activate selectively.
+- **Governance pack v2 maintenance (ADR-0012):** Products forking the
+  template inherit baseline governance.json per Facet (schema_version: "2").
+  governance.json must reference current cost/team structure and decision
+  authority. Quarterly review synchronizes governance policies with org
+  changes (team splits, budget adjustments, approval chain updates).
 
 Cache and mirror paths are accelerators only. A miss from `.local/`,
 the source mirror, or a bootstrap artifact must not be fatal during
@@ -159,6 +164,7 @@ remain isolated by worktree.
 | `.editorconfig` | Editor baseline; keep when adapting the template. |
 | `.agents/repo.json` | Per-product knobs and `facet_config` values. Facet presence, not this file, controls enablement. |
 | `.agents/facet/<name>/facet.json` | Declarative Facet manifests for repo-level AI capabilities: owned paths, commands, checks, and doc projections. |
+| `.agents/facet/<name>/governance.json` | Optional. Facet-scoped governance rules: budget, approver, escalation policy, decision RACI, risk bands (see ADR-0012). Governance pack v2 enables Products to declare per-Facet governance; inheritance and override supported. |
 | `.agents/facet/root/facet.json` | Root Facet. Display name `/`; owns baseline template substrate and repo-level defaults. |
 | `.agents/facet/system_test/scenarios.json` | System-test scenario manifest. Declares default cluster size and enabled backend checks. |
 | `.agents/ideas/ideas.jsonl` | Canonical idea inventory and backlog gate input, including safe-parallel worktree metadata. |
