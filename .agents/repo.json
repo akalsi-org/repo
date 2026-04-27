@@ -1,4 +1,14 @@
 {
+  "facet_budgets": {
+    "bootstrap": {
+      "max_spend": "5 days",
+      "period": "monthly"
+    },
+    "ideas": {
+      "max_spend": "10 days",
+      "period": "monthly"
+    }
+  },
   "facet_config": {
     "root": {
       "subsystem_descriptor_globs": []

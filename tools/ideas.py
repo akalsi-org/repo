@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pathlib
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from itertools import combinations
@@ -17,12 +18,13 @@ ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
 if str(ROOT) not in sys.path:
   sys.path.insert(0, str(ROOT))
 
-from tools.facets import facet_budgets, facet_keys, glob_match
+from tools.facets import facet_budgets, facet_keys, facet_spend_budgets, glob_match
 from tools.targets import TARGETS_REL, TargetLedger, TargetRecord, load_target_ledger
 
 
 IDEAS_REL = ".agents/ideas/ideas.jsonl"
 LEARNING_LEDGER_REL = ".agents/kb_src/tables/learning_ledger.jsonl"
+LESSONS_REL = ".agents/ideas/lessons.jsonl"
 STATES = ("seed", "shaped", "decided", "queued", "active", "done", "rejected", "parked")
 SCORES = ("H", "M", "L")
 VERDICTS = ("Do now", "Design first", "Watch", "Avoid")
@@ -858,6 +860,71 @@ def validate_rows(
   return issues
 
 
+def parse_cost_estimate(value: object) -> float | None:
+  """Parse cost_estimate field (numeric value in days or hours)."""
+  if value is None:
+    return None
+  if isinstance(value, (int, float)):
+    return float(value)
+  if isinstance(value, str):
+    try:
+      return float(value)
+    except ValueError:
+      return None
+  return None
+
+
+def facet_active_spend(rows: list[dict[str, object]], facet_key: str) -> float:
+  """Calculate total LOE (in days) for active ideas in a Facet."""
+  total = 0.0
+  for row in rows:
+    owner = row.get("owner")
+    state = row.get("state")
+    if owner != facet_key or state != "active":
+      continue
+    cost_estimate = parse_cost_estimate(row.get("cost_estimate"))
+    if cost_estimate is not None:
+      total += cost_estimate
+  return total
+
+
+def check_facet_budget(
+    root: pathlib.Path,
+    rows: list[dict[str, object]],
+    facet_key: str,
+    new_idea_cost: float | None = None,
+) -> tuple[bool, str]:
+  """Check if a Facet can accommodate new spend.
+  
+  Returns: (can_activate, message)
+  - can_activate=True if within budget
+  - message describes budget status
+  """
+  try:
+    budgets = facet_spend_budgets(root)
+  except ValueError as e:
+    return True, f"budget_parse_error: {e}"
+  
+  if facet_key not in budgets:
+    return True, "no_budget_configured"
+  
+  budget = budgets[facet_key]
+  active_spend = facet_active_spend(rows, facet_key)
+  total_spend = active_spend + (new_idea_cost or 0.0)
+  
+  if total_spend > budget.max_spend:
+    return False, (
+      f"BUDGET_EXCEEDED: Facet {budget.facet_name} would be at {100.0 * total_spend / budget.max_spend:.0f}% capacity "
+      f"(active: {active_spend:.1f}{budget.unit}, new: {new_idea_cost or 0:.1f}{budget.unit}, "
+      f"max: {budget.max_spend}{budget.unit})"
+    )
+  
+  return True, (
+    f"budget_ok: Facet {budget.facet_name} at {100.0 * total_spend / budget.max_spend:.0f}% capacity "
+    f"({total_spend:.1f}/{budget.max_spend}{budget.unit})"
+  )
+
+
 def find_row(rows: list[dict[str, object]], ident: str) -> dict[str, object]:
   for row in rows:
     if row.get("id") == ident:
@@ -1035,6 +1102,234 @@ def ready_suffix(row: dict[str, object]) -> str:
   return f" [{' '.join(parts)}]" if parts else ""
 
 
+def get_git_user() -> tuple[str, str]:
+  """Get git user name and email."""
+  try:
+    name = subprocess.check_output(
+      ["git", "config", "user.name"],
+      stderr=subprocess.DEVNULL,
+      text=True,
+    ).strip()
+    email = subprocess.check_output(
+      ["git", "config", "user.email"],
+      stderr=subprocess.DEVNULL,
+      text=True,
+    ).strip()
+    return (name, email)
+  except (subprocess.CalledProcessError, FileNotFoundError):
+    raise SystemExit("git config user.name and user.email must be set")
+
+
+def load_lessons_rows(root: pathlib.Path) -> list[dict[str, object]]:
+  """Load lessons from .agents/ideas/lessons.jsonl."""
+  path = root / LESSONS_REL
+  if not path.is_file():
+    return []
+  rows: list[dict[str, object]] = []
+  for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    if not line.strip():
+      continue
+    try:
+      row = json.loads(line)
+    except json.JSONDecodeError as exc:
+      raise SystemExit(f"{LESSONS_REL}:{lineno}: invalid JSON: {exc.msg}") from exc
+    if not isinstance(row, dict):
+      raise SystemExit(f"{LESSONS_REL}:{lineno}: row must be object")
+    rows.append(row)
+  return rows
+
+
+def write_lessons_rows(root: pathlib.Path, rows: list[dict[str, object]]) -> None:
+  """Write lessons to .agents/ideas/lessons.jsonl."""
+  path = root / LESSONS_REL
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8")
+
+
+def cmd_activate_dry_run(root: pathlib.Path, args: argparse.Namespace) -> int:
+  """Output activation receipt for target without side effects."""
+  target_rows = load_target_rows(root)
+  target_id = args.target_id
+  
+  # Find target
+  target_row = None
+  for row in target_rows:
+    if row.get("id") == target_id:
+      target_row = row
+      break
+  
+  if not target_row:
+    raise SystemExit(f"target `{target_id}` not found")
+  
+  # Validate required fields
+  check = target_row.get("check")
+  if not check:
+    raise SystemExit(f"target `{target_id}` has no check")
+  
+  owner = target_row.get("owner")
+  if not owner:
+    raise SystemExit(f"target `{target_id}` has no owner")
+  
+  write_scope = target_row.get("write_scope")
+  if not write_scope:
+    raise SystemExit(f"target `{target_id}` has no write_scope")
+  
+  estimated_loe = target_row.get("estimated_loe", "1w")
+  
+  # Build receipt
+  receipt = {
+    "target_id": target_id,
+    "check": check,
+    "write_scope": write_scope,
+    "owner_facet": owner,
+    "estimated_loe": estimated_loe,
+    "ready_timestamp": datetime.now(timezone.utc).isoformat(),
+    "activation_command": f"ideas activate --target {target_id}",
+  }
+  
+  print(json.dumps(receipt, sort_keys=True))
+  return 0
+
+
+def cmd_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
+  """Activate a target by setting activated_at and activated_by."""
+  target_rows = load_target_rows(root)
+  target_id = args.target
+  
+  # Find target
+  target_row = None
+  target_idx = None
+  for idx, row in enumerate(target_rows):
+    if row.get("id") == target_id:
+      target_row = row
+      target_idx = idx
+      break
+  
+  if not target_row:
+    raise SystemExit(f"target `{target_id}` not found")
+  
+  if target_row.get("status") != "active":
+    raise SystemExit(f"target `{target_id}` is not active (status={target_row.get('status')})")
+  
+  # Check if already activated
+  if target_row.get("activated_at"):
+    print(f"Target {target_id} already activated at {target_row.get('activated_at')}")
+    return 0
+  
+  # Get git user
+  user_name, user_email = get_git_user()
+  
+  # Update target
+  now = datetime.now(timezone.utc).isoformat()
+  target_row = dict(target_row)  # Make mutable copy
+  target_row["activated_at"] = now
+  target_row["activated_by"] = user_email
+  target_rows[target_idx] = target_row
+  
+  write_target_rows(root, target_rows)
+  
+  # Calculate review date
+  check = target_row.get("check", "")
+  review_cadence = target_row.get("review_cadence", "weekly")
+  interval = CADENCE_INTERVALS.get(review_cadence, timedelta(days=7))
+  review_date = (datetime.now(timezone.utc) + interval).strftime("%Y-%m-%d")
+  
+  print(f"Target {target_id} activated.")
+  print(f"Run check: {check}")
+  print(f"Expected review date: {review_date}")
+  return 0
+
+
+def cmd_archive(root: pathlib.Path, args: argparse.Namespace) -> int:
+  """Archive a target with outcome and optionally prompt for lesson."""
+  target_rows = load_target_rows(root)
+  target_id = args.target_id
+  outcome = args.outcome
+  
+  if outcome not in ("pass", "fail"):
+    raise SystemExit(f"outcome must be 'pass' or 'fail', got '{outcome}'")
+  
+  # Find target
+  target_row = None
+  target_idx = None
+  for idx, row in enumerate(target_rows):
+    if row.get("id") == target_id:
+      target_row = row
+      target_idx = idx
+      break
+  
+  if not target_row:
+    raise SystemExit(f"target `{target_id}` not found")
+  
+  if target_row.get("status") != "active":
+    raise SystemExit(f"target `{target_id}` is not active (status={target_row.get('status')})")
+  
+  # Get git user
+  user_name, user_email = get_git_user()
+  
+  # Update target
+  now = datetime.now(timezone.utc).isoformat()
+  target_row = dict(target_row)  # Make mutable copy
+  target_row["archived_at"] = now
+  target_row["outcome"] = outcome
+  target_row["archived_by"] = user_email
+  target_rows[target_idx] = target_row
+  
+  # If outcome is fail, mark for revisit
+  if outcome == "fail":
+    target_row["to_revisit"] = True
+  
+  write_target_rows(root, target_rows)
+  
+  # If outcome is pass, prompt for lesson
+  if outcome == "pass":
+    print(f"Target {target_id} achieved outcome: pass")
+    print("Enter a 1-line lesson learned (or press Enter to skip):")
+    try:
+      lesson_text = input().strip()
+    except (EOFError, KeyboardInterrupt):
+      lesson_text = ""
+    
+    if lesson_text:
+      # Create lesson entry
+      lessons = load_lessons_rows(root)
+      
+      lesson_id = f"lesson-{target_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+      lesson_row = {
+        "id": lesson_id,
+        "lesson": lesson_text,
+        "check": target_row.get("check", ""),
+        "facet": target_row.get("owner", ""),
+        "reviewed_at": now,
+        "source_target_id": target_id,
+        "reviewed_by": user_email,
+        "outcome": "pass",
+      }
+      
+      lessons.append(lesson_row)
+      write_lessons_rows(root, lessons)
+      print(f"Lesson recorded: {lesson_id}")
+    else:
+      print("No lesson recorded")
+  else:
+    # outcome == fail
+    print(f"Target {target_id} achieved outcome: fail")
+    print("Enter failure reason (or press Enter to skip):")
+    try:
+      failure_reason = input().strip()
+    except (EOFError, KeyboardInterrupt):
+      failure_reason = ""
+    
+    if failure_reason:
+      target_rows[target_idx]["failure_reason"] = failure_reason
+      write_target_rows(root, target_rows)
+      print(f"Failure reason recorded: {failure_reason}")
+    
+    print("Target marked for revisit in next board cycle.")
+  
+  return 0
+
+
 def cmd_list(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
   ledger = load_target_ledger(root)
@@ -1048,6 +1343,7 @@ def cmd_list(root: pathlib.Path, args: argparse.Namespace) -> int:
   if args.json:
     print(json.dumps({"ideas": rows}, sort_keys=True))
     return 0
+
   if not rows:
     print("ideas: none")
     return 0
@@ -1124,12 +1420,22 @@ def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
     "fit": args.fit,
     "verdict": args.verdict,
   }
+  if hasattr(args, 'cost_estimate') and args.cost_estimate is not None:
+    row["cost_estimate"] = args.cost_estimate
   row["updated_at"] = utc_now()
   issues = validate_rows(root, rows, ledger=ledger)
   if issues:
     raise SystemExit("idea validation failed:\n" + "\n".join(f"- {v}" for v in issues))
   write_rows(root, rows)
-  print(f"scored {args.id}")
+  output = f"scored {args.id}"
+  if hasattr(args, 'cost_estimate') and args.cost_estimate is not None:
+    can_activate, msg = check_facet_budget(root, rows, row.get("owner"), args.cost_estimate)
+    if not can_activate:
+      print(f"{output} with WARNING: {msg}")
+    else:
+      print(f"{output} ({msg})")
+  else:
+    print(output)
   return 0
 
 
@@ -1269,6 +1575,21 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
     if not isinstance(source_artifact, str) or not source_artifact:
       raise SystemExit("activate_next_bet needs --write-scope when lesson has no source_artifact")
     write_scope = [source_artifact]
+  
+  # Check Facet budget hard gate
+  cost_estimate = parse_cost_estimate(getattr(args, 'cost_estimate', None))
+  can_activate, budget_msg = check_facet_budget(root, rows, owner, cost_estimate)
+  if not can_activate:
+    active_ideas = [
+      f"{r.get('id')} ({r.get('cost_estimate', 'unknown')}d)"
+      for r in rows if r.get("owner") == owner and r.get("state") == "active"
+    ]
+    raise SystemExit(
+      f"Facet budget ceiling exceeded. {budget_msg}\n"
+      f"Active targets: {', '.join(active_ideas) if active_ideas else 'none'}\n"
+      f"Archive or finish one before activating."
+    )
+  
   new_target = TargetRecord(
     id=target_id,
     title=target_title,
@@ -1309,6 +1630,8 @@ def cmd_activate_next_bet(root: pathlib.Path, args: argparse.Namespace) -> int:
     "source_artifact": str(lesson.get("source_artifact") or ""),
     "source_reviewed_at": str(lesson.get("reviewed_at") or ""),
   }
+  if cost_estimate is not None:
+    row["cost_estimate"] = cost_estimate
   for field in DACI_STR_FIELDS:
     value = getattr(args, field)
     if value is not None:
@@ -1579,6 +1902,7 @@ def build_parser() -> argparse.ArgumentParser:
   p_score.add_argument("--reversibility", dest="reversibility_score", choices=SCORES, required=True)
   p_score.add_argument("--fit", choices=SCORES, required=True)
   p_score.add_argument("--verdict", choices=VERDICTS, required=True)
+  p_score.add_argument("--cost-estimate", dest="cost_estimate", type=float, help="Cost estimate in days or hours")
   p_score.set_defaults(func=cmd_score)
 
   p_promote = sub.add_parser("promote")
@@ -1626,7 +1950,21 @@ def build_parser() -> argparse.ArgumentParser:
   p_sync_learning = sub.add_parser("sync_learning_ledger")
   p_sync_learning.set_defaults(func=cmd_sync_learning_ledger)
 
+  p_activate_dry_run = sub.add_parser("activate_dry_run")
+  p_activate_dry_run.add_argument("target_id")
+  p_activate_dry_run.set_defaults(func=cmd_activate_dry_run)
+
+  p_activate_cmd = sub.add_parser("activate")
+  p_activate_cmd.add_argument("--target", required=True)
+  p_activate_cmd.set_defaults(func=cmd_activate)
+
+  p_archive = sub.add_parser("archive")
+  p_archive.add_argument("target_id")
+  p_archive.add_argument("--outcome", choices=["pass", "fail"], required=True)
+  p_archive.set_defaults(func=cmd_archive)
+
   p_activate = sub.add_parser("activate_next_bet")
+
   p_activate.add_argument("--lesson-id")
   p_activate.add_argument("--facet")
   p_activate.add_argument("--target")
@@ -1654,6 +1992,7 @@ def build_parser() -> argparse.ArgumentParser:
   p_activate.add_argument("--worktree", choices=WORKTREE_MODES, default="required")
   p_activate.add_argument("--write-scope", action="append")
   p_activate.add_argument("--state", choices=QUEUE_READY_STATES, default="shaped")
+  p_activate.add_argument("--cost-estimate", dest="cost_estimate", type=float, help="Cost estimate in days or hours")
   p_activate.add_argument("--notes")
   p_activate.set_defaults(func=cmd_activate_next_bet)
   return parser

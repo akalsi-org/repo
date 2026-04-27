@@ -1516,3 +1516,243 @@ class IdeasCliTest(unittest.TestCase):
     self.assertEqual(shaped["maintenance"], "L")
     ready = self.run_ideas("ready")
     self.assertIn("board-pick-001", ready.stdout)
+
+  def test_activate_dry_run_outputs_receipt(self) -> None:
+    """Test that activate_dry_run outputs a JSON receipt with no side effects."""
+    # Create a target with required fields
+    target_id = "test-activation"
+    targets_path = self.root / ".agents/targets/targets.jsonl"
+    targets_content = targets_path.read_text(encoding="utf-8")
+    target_row = {
+      "id": target_id,
+      "title": "Test Activation",
+      "owner": "ideas",
+      "status": "active",
+      "review_cadence": "weekly",
+      "check": "./repo.sh test-check",
+      "write_scope": "tools/**",
+      "estimated_loe": "3d",
+    }
+    targets_content += json.dumps(target_row, sort_keys=True) + "\n"
+    targets_path.write_text(targets_content, encoding="utf-8")
+    
+    # Run activate_dry_run
+    proc = self.run_ideas("activate_dry_run", target_id)
+    
+    # Parse output
+    receipt = json.loads(proc.stdout)
+    
+    # Verify receipt structure
+    self.assertEqual(receipt["target_id"], target_id)
+    self.assertEqual(receipt["check"], "./repo.sh test-check")
+    self.assertEqual(receipt["write_scope"], "tools/**")
+    self.assertEqual(receipt["owner_facet"], "ideas")
+    self.assertEqual(receipt["estimated_loe"], "3d")
+    self.assertIn("activation_command", receipt)
+    self.assertIn("ready_timestamp", receipt)
+    
+    # Verify no side effects (target should not be activated)
+    targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    activated_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertNotIn("activated_at", activated_target)
+    self.assertNotIn("activated_by", activated_target)
+
+  def test_activate_updates_target_with_timestamp(self) -> None:
+    """Test that activate command sets activated_at and activated_by."""
+    # Create a target for activation
+    target_id = "test-activate-cmd"
+    targets_path = self.root / ".agents/targets/targets.jsonl"
+    targets_content = targets_path.read_text(encoding="utf-8")
+    target_row = {
+      "id": target_id,
+      "title": "Test Activate Cmd",
+      "owner": "ideas",
+      "status": "active",
+      "review_cadence": "weekly",
+      "check": "./repo.sh test",
+    }
+    targets_content += json.dumps(target_row, sort_keys=True) + "\n"
+    targets_path.write_text(targets_content, encoding="utf-8")
+    
+    # Run activate
+    proc = self.run_ideas("activate", "--target", target_id)
+    self.assertIn("Target", proc.stdout)
+    self.assertIn("activated", proc.stdout)
+    
+    # Verify target was updated
+    targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    activated_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertIn("activated_at", activated_target)
+    self.assertIn("activated_by", activated_target)
+
+  def test_archive_pass_persists_lesson(self) -> None:
+    """Test that archiving with outcome=pass prompts for and records lesson."""
+    # Create a target for archiving
+    target_id = "test-archive-pass"
+    targets_path = self.root / ".agents/targets/targets.jsonl"
+    targets_content = targets_path.read_text(encoding="utf-8")
+    target_row = {
+      "id": target_id,
+      "title": "Test Archive Pass",
+      "owner": "ideas",
+      "status": "active",
+      "review_cadence": "weekly",
+      "check": "./repo.sh test",
+    }
+    targets_content += json.dumps(target_row, sort_keys=True) + "\n"
+    targets_path.write_text(targets_content, encoding="utf-8")
+    
+    # Mock input to provide lesson text
+    import unittest.mock
+    with unittest.mock.patch("builtins.input", return_value="test lesson learned"):
+      proc = self.run_ideas("archive", target_id, "--outcome", "pass")
+    
+    # Verify output mentions lesson
+    self.assertIn("pass", proc.stdout)
+    self.assertIn("Lesson", proc.stdout)
+    
+    # Verify target was archived
+    targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    archived_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertEqual(archived_target["outcome"], "pass")
+    self.assertIn("archived_at", archived_target)
+    
+    # Verify lesson was recorded
+    lessons_path = self.root / ".agents/ideas/lessons.jsonl"
+    if lessons_path.is_file():
+      lessons = [json.loads(line) for line in lessons_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+      self.assertGreater(len(lessons), 0)
+      lesson = lessons[0]
+      self.assertEqual(lesson["lesson"], "test lesson learned")
+      self.assertEqual(lesson["source_target_id"], target_id)
+      self.assertEqual(lesson["outcome"], "pass")
+
+  def test_archive_fail_marks_revisit(self) -> None:
+    """Test that archiving with outcome=fail marks target for revisit."""
+    # Create a target for archiving
+    target_id = "test-archive-fail"
+    targets_path = self.root / ".agents/targets/targets.jsonl"
+    targets_content = targets_path.read_text(encoding="utf-8")
+    target_row = {
+      "id": target_id,
+      "title": "Test Archive Fail",
+      "owner": "ideas",
+      "status": "active",
+      "review_cadence": "weekly",
+      "check": "./repo.sh test",
+    }
+    targets_content += json.dumps(target_row, sort_keys=True) + "\n"
+    targets_path.write_text(targets_content, encoding="utf-8")
+    
+    # Mock input to provide failure reason
+    import unittest.mock
+    with unittest.mock.patch("builtins.input", return_value="test failure reason"):
+      proc = self.run_ideas("archive", target_id, "--outcome", "fail")
+    
+    # Verify output mentions fail and revisit
+    self.assertIn("fail", proc.stdout)
+    self.assertIn("revisit", proc.stdout)
+    
+    # Verify target was archived with revisit flag
+    targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    archived_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertEqual(archived_target["outcome"], "fail")
+    self.assertTrue(archived_target.get("to_revisit", False))
+    self.assertIn("archived_at", archived_target)
+    self.assertEqual(archived_target.get("failure_reason"), "test failure reason")
+
+  def test_facet_budget_ceiling_blocks_activation(self) -> None:
+    """Test that Facet budget ceiling prevents new idea activation."""
+    # Set up repo.json with budget
+    write(
+      self.root / ".agents/repo.json",
+      json.dumps({
+        "facet_budgets": {
+          "ideas": {
+            "max_spend": "2 days",
+            "period": "monthly",
+          }
+        },
+        "facet_config": {},
+      }),
+    )
+    
+    # Create learning ledger
+    write(
+      self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
+      json.dumps({
+        "id": "lesson_budget_test",
+        "target_id": TARGET_ID,
+        "facet": "ideas",
+        "source_idea": "source",
+        "source_artifact": "tools/ideas.py",
+        "check": "./repo.sh ideas ready",
+        "lesson": "budget test lesson",
+        "follow_up": "test budget limit",
+        "reviewed_at": "2026-04-26T12:00:00+00:00",
+      }) + "\n",
+    )
+    
+    # Create an active idea with 1 day cost estimate
+    write(
+      self.root / ".agents/ideas/ideas.jsonl",
+      json.dumps({
+        "id": "active-idea-1",
+        "title": "Active idea 1",
+        "owner": "ideas",
+        "state": "active",
+        "target": TARGET_ID,
+        "effect": "test effect",
+        "checks": ["./repo.sh ideas ready"],
+        "reversibility": "high",
+        "maintenance": "L",
+        "decision_required": False,
+        "cost_estimate": 1.0,
+        "created_at": "2026-04-26T00:00:00+00:00",
+        "updated_at": "2026-04-26T00:00:00+00:00",
+      }) + "\n",
+    )
+    
+    # Create a second active idea with 1 day cost estimate (total 2 days at budget ceiling)
+    ideas_path = self.root / ".agents/ideas/ideas.jsonl"
+    ideas_content = ideas_path.read_text(encoding="utf-8")
+    ideas_content += json.dumps({
+      "id": "active-idea-2",
+      "title": "Active idea 2",
+      "owner": "ideas",
+      "state": "active",
+      "target": REVIEW_TARGET_ID,
+      "effect": "test effect",
+      "checks": ["./repo.sh ideas ready"],
+      "reversibility": "high",
+      "maintenance": "L",
+      "decision_required": False,
+      "cost_estimate": 1.0,
+      "created_at": "2026-04-26T00:00:00+00:00",
+      "updated_at": "2026-04-26T00:00:00+00:00",
+    }) + "\n"
+    ideas_path.write_text(ideas_content, encoding="utf-8")
+    
+    # Try to activate new idea with 1 day cost estimate - should fail
+    proc = self.run_ideas(
+      "activate_next_bet",
+      "--lesson-id",
+      "lesson_budget_test",
+      "--target-id",
+      "budget-test-target",
+      "--target-title",
+      "Budget test target",
+      "--idea-id",
+      "budget-test-idea",
+      "--idea-title",
+      "Budget test idea",
+      "--effect",
+      "test budget enforcement",
+      "--cost-estimate",
+      "1.0",
+      check=False,
+    )
+    self.assertNotEqual(proc.returncode, 0)
+    self.assertIn("Facet budget ceiling exceeded", proc.stderr)
+    self.assertIn("active-idea-1", proc.stderr)
+    self.assertIn("active-idea-2", proc.stderr)

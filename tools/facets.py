@@ -65,6 +65,15 @@ class FacetBudget:
   docs: int
 
 
+@dataclass(frozen=True)
+class FacetSpendBudget:
+  facet_key: str
+  facet_name: str
+  max_spend: float
+  unit: str
+  period: str
+
+
 def _require_object(
     raw: object,
     *,
@@ -483,3 +492,73 @@ def facet_budgets(root: pathlib.Path) -> list[FacetBudget]:
       )
     )
   return budgets
+
+
+def facet_spend_budgets(root: pathlib.Path) -> dict[str, FacetSpendBudget]:
+  """Load Facet spend budgets from .agents/repo.json.
+  
+  Returns: dict[facet_key, FacetSpendBudget]
+  Raises: ValueError if budget format is invalid
+  """
+  repo_json_path = root / ".agents/repo.json"
+  if not repo_json_path.is_file():
+    return {}
+  
+  repo_config = json.loads(repo_json_path.read_text(encoding="utf-8"))
+  if not isinstance(repo_config, dict):
+    return {}
+  
+  facet_budgets_raw = repo_config.get("facet_budgets")
+  if facet_budgets_raw is None:
+    return {}
+  if not isinstance(facet_budgets_raw, dict):
+    raise ValueError(".agents/repo.json:facet_budgets must be object")
+  
+  budgets: dict[str, FacetSpendBudget] = {}
+  facets_by_key = {facet.key: facet for facet in load_facets(root)}
+  
+  for facet_key, budget_spec in facet_budgets_raw.items():
+    if not isinstance(budget_spec, dict):
+      raise ValueError(f".agents/repo.json:facet_budgets.{facet_key} must be object")
+    
+    # Parse max_spend like "5 days" or "10 hours"
+    max_spend_str = budget_spec.get("max_spend")
+    if not isinstance(max_spend_str, str) or not max_spend_str:
+      raise ValueError(f".agents/repo.json:facet_budgets.{facet_key}.max_spend must be non-empty string")
+    
+    parts = max_spend_str.split()
+    if len(parts) != 2:
+      raise ValueError(
+        f".agents/repo.json:facet_budgets.{facet_key}.max_spend format must be '<number> <unit>' (e.g., '5 days')"
+      )
+    
+    try:
+      max_spend = float(parts[0])
+    except ValueError:
+      raise ValueError(
+        f".agents/repo.json:facet_budgets.{facet_key}.max_spend value must be numeric"
+      )
+    
+    unit = parts[1].lower()  # "days", "hours"
+    if unit not in ("days", "hours"):
+      raise ValueError(
+        f".agents/repo.json:facet_budgets.{facet_key}.max_spend unit must be 'days' or 'hours'"
+      )
+    
+    period = budget_spec.get("period", "monthly")
+    if not isinstance(period, str) or not period:
+      raise ValueError(f".agents/repo.json:facet_budgets.{facet_key}.period must be non-empty string")
+    
+    facet = facets_by_key.get(facet_key)
+    facet_name = facet.name if facet else facet_key
+    
+    budgets[facet_key] = FacetSpendBudget(
+      facet_key=facet_key,
+      facet_name=facet_name,
+      max_spend=max_spend,
+      unit=unit,
+      period=period,
+    )
+  
+  return budgets
+
