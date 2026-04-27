@@ -1756,3 +1756,260 @@ class IdeasCliTest(unittest.TestCase):
     self.assertIn("Facet budget ceiling exceeded", proc.stderr)
     self.assertIn("active-idea-1", proc.stderr)
     self.assertIn("active-idea-2", proc.stderr)
+
+
+class BatchSafeParallelTest(unittest.TestCase):
+  """Tests for safe parallel batch computation."""
+
+  def setUp(self) -> None:
+    self.tmp = tempfile.TemporaryDirectory()
+    self.root = pathlib.Path(self.tmp.name)
+    write(
+      self.root / ".agents/facet/ideas/facet.json",
+      json.dumps(
+        {
+          "name": "ideas",
+          "description": "Idea inventory",
+          "owns": [".agents/ideas/**", "tools/ideas"],
+          "commands": [{"name": "ideas", "purpose": "Manage ideas"}],
+          "checks": [],
+          "docs": [],
+        }
+      ),
+    )
+    write(self.root / ".agents/ideas/ideas.jsonl", "")
+
+  def tearDown(self) -> None:
+    self.tmp.cleanup()
+
+  def test_safe_parallel_batch_detects_write_scope_conflicts(self) -> None:
+    """Batch should exclude targets with overlapping write_scope."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-a",
+          "title": "Target A",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-b",
+          "title": "Target B",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/tools/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-c",
+          "title": "Target C",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["docs/**"],
+          "parallel_mode": "safe",
+        }),
+      ]) + "\n",
+    )
+    ledger = ideas.load_target_ledger(self.root)
+    batch = ideas.compute_safe_parallel_batch(ledger)
+    batch_ids = {t.id for t in batch}
+    
+    # Should pick largest valid batch: either [a, c] or [b, c]
+    # Both are valid (no conflicts), so algorithm picks one with size 2
+    self.assertEqual(len(batch), 2)
+    self.assertIn("target-c", batch_ids)
+    # Either target-a or target-b should be in batch, but not both
+    self.assertTrue("target-a" in batch_ids or "target-b" in batch_ids)
+    self.assertFalse("target-a" in batch_ids and "target-b" in batch_ids)
+
+  def test_safe_parallel_batch_respects_serial_mode(self) -> None:
+    """Batch should exclude serial targets and only include safe ones."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-safe-1",
+          "title": "Target Safe 1",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["docs/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-safe-2",
+          "title": "Target Safe 2",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["ideas/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-serial",
+          "title": "Target Serial",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/**"],
+          "parallel_mode": "serial",
+        }),
+      ]) + "\n",
+    )
+    ledger = ideas.load_target_ledger(self.root)
+    batch = ideas.compute_safe_parallel_batch(ledger)
+    batch_ids = {t.id for t in batch}
+    
+    self.assertNotIn("target-serial", batch_ids)
+    self.assertEqual(len(batch), 2)
+    self.assertIn("target-safe-1", batch_ids)
+    self.assertIn("target-safe-2", batch_ids)
+
+  def test_safe_parallel_batch_detects_blocked_targets(self) -> None:
+    """Batch should exclude blocked targets waiting for other targets."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-base",
+          "title": "Target Base",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-blocked",
+          "title": "Target Blocked",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["docs/**"],
+          "parallel_mode": "blocked",
+          "blocker_target_id": "target-base",
+        }),
+      ]) + "\n",
+    )
+    ledger = ideas.load_target_ledger(self.root)
+    batch = ideas.compute_safe_parallel_batch(ledger)
+    batch_ids = {t.id for t in batch}
+    
+    self.assertNotIn("target-blocked", batch_ids)
+
+  def test_batch_activate_atomicity_success(self) -> None:
+    """Batch activation should succeed for non-conflicting targets."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-1",
+          "title": "Target 1",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-2",
+          "title": "Target 2",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["docs/**"],
+          "parallel_mode": "safe",
+        }),
+      ]) + "\n",
+    )
+    write(self.root / ".agents/ideas/ideas.jsonl", "")
+    
+    proc = self.run_ideas("batch-activate", "--targets", "target-1,target-2", check=False)
+    self.assertEqual(proc.returncode, 0)
+    self.assertIn("Batch activation", proc.stdout)
+    self.assertIn("target-1", proc.stdout)
+    self.assertIn("target-2", proc.stdout)
+    
+    targets_rows = [json.loads(line) for line in (self.root / ".agents/targets/targets.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    for row in targets_rows:
+      if row["id"] in ["target-1", "target-2"]:
+        self.assertIn("activated_at", row)
+        self.assertIn("activated_by", row)
+
+  def test_batch_activate_atomicity_failure_on_conflict(self) -> None:
+    """Batch activation should fail atomically if write_scope conflicts detected."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-x",
+          "title": "Target X",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/**"],
+          "parallel_mode": "safe",
+        }),
+        json.dumps({
+          "id": "target-y",
+          "title": "Target Y",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["bootstrap/tools/**"],
+          "parallel_mode": "safe",
+        }),
+      ]) + "\n",
+    )
+    
+    proc = self.run_ideas("batch-activate", "--targets", "target-x,target-y", check=False)
+    self.assertNotEqual(proc.returncode, 0)
+    # Error message should be in stdout (printed before return)
+    output = proc.stdout + proc.stderr
+    self.assertIn("conflict", output.lower())
+    
+    targets_rows = [json.loads(line) for line in (self.root / ".agents/targets/targets.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    for row in targets_rows:
+      self.assertNotIn("activated_at", row)
+
+  def test_batch_recommend_json_output(self) -> None:
+    """Batch recommend should output valid JSON with --json flag."""
+    write(
+      self.root / ".agents/targets/targets.jsonl",
+      "\n".join([
+        json.dumps({
+          "id": "target-p",
+          "title": "Target P",
+          "owner": "ideas",
+          "status": "active",
+          "write_scope": ["ideas/**"],
+          "parallel_mode": "safe",
+        }),
+      ]) + "\n",
+    )
+    write(self.root / ".agents/ideas/ideas.jsonl", "")
+    
+    proc = self.run_ideas("batch", "--recommend", "--json")
+    self.assertEqual(proc.returncode, 0)
+    data = json.loads(proc.stdout)
+    self.assertIn("batch_id", data)
+    self.assertIn("targets", data)
+    self.assertIn("total_targets", data)
+    self.assertIn("conflicts_detected", data)
+
+  def run_ideas(self, *args: str, check: bool = True) -> RunResult:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+      try:
+        code = ideas.main(["--root", str(self.root), *args])
+      except SystemExit as exc:
+        if isinstance(exc.code, int):
+          code = exc.code
+        elif exc.code is None:
+          code = 0
+        else:
+          code = 1
+    result = RunResult(code, stdout.getvalue(), stderr.getvalue())
+    if check and result.returncode != 0:
+      raise AssertionError(f"Exit code {result.returncode}: {result.stderr}")
+    return result
+
+
+if __name__ == "__main__":
+  unittest.main()

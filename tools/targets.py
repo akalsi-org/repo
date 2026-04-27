@@ -24,6 +24,9 @@ class TargetRecord:
   status: str
   review_cadence: str | None = None
   check: str | None = None
+  write_scope: tuple[str, ...] = ()
+  parallel_mode: str | None = None
+  blocker_target_id: str | None = None
 
 
 class TargetLedger(Mapping[str, TargetRecord]):
@@ -74,6 +77,21 @@ class TargetLedger(Mapping[str, TargetRecord]):
       check = raw.get("check")
       if check is not None and (not isinstance(check, str) or not check):
         raise ValueError(f"{TARGETS_REL}:{lineno}: check must be non-empty string")
+      write_scope_list = raw.get("write_scope")
+      write_scope: tuple[str, ...] = ()
+      if write_scope_list is not None:
+        if not isinstance(write_scope_list, list):
+          raise ValueError(f"{TARGETS_REL}:{lineno}: write_scope must be array of strings")
+        for item in write_scope_list:
+          if not isinstance(item, str) or not item:
+            raise ValueError(f"{TARGETS_REL}:{lineno}: write_scope items must be non-empty strings")
+        write_scope = tuple(write_scope_list)
+      parallel_mode = raw.get("parallel_mode")
+      if parallel_mode is not None and (not isinstance(parallel_mode, str) or parallel_mode not in ("safe", "serial", "blocked")):
+        raise ValueError(f"{TARGETS_REL}:{lineno}: parallel_mode must be 'safe', 'serial', or 'blocked'")
+      blocker_target_id = raw.get("blocker_target_id")
+      if blocker_target_id is not None and (not isinstance(blocker_target_id, str) or not blocker_target_id):
+        raise ValueError(f"{TARGETS_REL}:{lineno}: blocker_target_id must be non-empty string")
       rows.append(
         TargetRecord(
           id=target_id,
@@ -82,6 +100,9 @@ class TargetLedger(Mapping[str, TargetRecord]):
           status=status,
           review_cadence=review_cadence,
           check=check,
+          write_scope=write_scope,
+          parallel_mode=parallel_mode,
+          blocker_target_id=blocker_target_id,
         )
       )
     return cls(tuple(rows))

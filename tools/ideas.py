@@ -551,6 +551,83 @@ def unused_active_targets(
   return [target.id for target in ledger.active() if target.id not in used]
 
 
+def _target_write_scopes(target: TargetRecord) -> list[str]:
+  return list(target.write_scope) if target.write_scope else []
+
+
+def _target_scope_overlaps(left: str, right: str) -> bool:
+  return glob_match(left, right) or glob_match(right, left)
+
+
+def target_scopes_conflict(left: TargetRecord, right: TargetRecord) -> list[str]:
+  """Detect write_scope conflicts between two targets."""
+  overlaps: list[str] = []
+  for left_scope in _target_write_scopes(left):
+    for right_scope in _target_write_scopes(right):
+      if not _target_scope_overlaps(left_scope, right_scope):
+        continue
+      overlap = left_scope if left_scope == right_scope else f"{left_scope} <-> {right_scope}"
+      if overlap not in overlaps:
+        overlaps.append(overlap)
+  return overlaps
+
+
+def compute_safe_parallel_batch(
+    ledger: TargetLedger,
+    max_batch_size: int = 3,
+) -> list[TargetRecord]:
+  """Compute safe parallel batch of targets.
+  
+  Returns non-conflicting targets that can activate together:
+  - All in 'safe' parallel_mode (or None)
+  - No write_scope overlaps
+  - No blocked dependencies
+  - Up to max_batch_size targets
+  """
+  candidates: list[TargetRecord] = []
+  for target in ledger.active():
+    parallel_mode = target.parallel_mode
+    if parallel_mode == "serial":
+      continue
+    if target.blocker_target_id:
+      blocker = ledger.get(target.blocker_target_id)
+      if blocker is None or blocker.status != "archived":
+        continue
+    candidates.append(target)
+  
+  if not candidates:
+    return []
+  
+  best: list[TargetRecord] = []
+  best_score = (-1, -1)
+  
+  for size in range(1, min(len(candidates) + 1, max_batch_size + 1)):
+    for combo in combinations(candidates, size):
+      combo_list = list(combo)
+      is_batchable = True
+      
+      for left, right in combinations(combo_list, 2):
+        left_mode = left.parallel_mode or "safe"
+        right_mode = right.parallel_mode or "safe"
+        if left_mode == "serial" or right_mode == "serial":
+          is_batchable = False
+          break
+        if target_scopes_conflict(left, right):
+          is_batchable = False
+          break
+      
+      if not is_batchable:
+        continue
+      
+      score = (len(combo_list), len(combo_list))
+      if score > best_score:
+        best = combo_list
+        best_score = score
+  
+  return best
+
+
+
 def unreviewed_done_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
   return [
     row for row in rows
@@ -1729,6 +1806,120 @@ def cmd_ready(root: pathlib.Path, args: argparse.Namespace) -> int:
   return 0
 
 
+def cmd_batch(root: pathlib.Path, args: argparse.Namespace) -> int:
+  """Compute and recommend safe parallel batch of targets."""
+  ledger = load_target_ledger(root)
+  batch = compute_safe_parallel_batch(ledger, max_batch_size=args.max_batch_size)
+  
+  if args.json:
+    batch_data = {
+      "batch_id": utc_now(),
+      "targets": [
+        {
+          "id": target.id,
+          "title": target.title,
+          "owner": target.owner,
+          "write_scope": list(target.write_scope),
+          "parallel_mode": target.parallel_mode or "safe",
+        }
+        for target in batch
+      ],
+      "total_targets": len(batch),
+      "conflicts_detected": 0,
+    }
+    print(json.dumps(batch_data, indent=2))
+  else:
+    if not batch:
+      print("Recommended batch: none (no safe targets)")
+      return 0
+    
+    print(f"Recommended batch ({len(batch)} targets, safe to activate in parallel):")
+    for target in batch:
+      scopes_str = ", ".join(target.write_scope) if target.write_scope else "(none)"
+      mode_str = target.parallel_mode or "safe"
+      print(f"  - {target.id}: owner={target.owner}, write_scope={scopes_str}, mode={mode_str}")
+    
+    batch_ids = ",".join(target.id for target in batch)
+    print(f"\nActivation command:")
+    print(f"  ./repo.sh ideas batch-activate --targets {batch_ids}")
+  return 0
+
+
+def cmd_batch_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
+  """Atomically activate a batch of targets."""
+  target_rows = load_target_rows(root)
+  ledger = load_target_ledger(root)
+  
+  target_ids = args.targets.split(",") if args.targets else []
+  if not target_ids:
+    raise SystemExit("--targets required: comma-separated target IDs")
+  
+  to_activate: list[tuple[int, dict[str, object], TargetRecord]] = []
+  
+  for target_id in target_ids:
+    target_id = target_id.strip()
+    target = ledger.get(target_id)
+    if target is None:
+      raise SystemExit(f"target `{target_id}` not found in ledger")
+    
+    target_row = None
+    target_idx = None
+    for idx, row in enumerate(target_rows):
+      if row.get("id") == target_id:
+        target_row = row
+        target_idx = idx
+        break
+    
+    if target_row is None:
+      raise SystemExit(f"target `{target_id}` not found in targets.jsonl")
+    
+    if target_row.get("status") != "active":
+      raise SystemExit(f"target `{target_id}` status={target_row.get('status')}, need 'active'")
+    
+    if target_row.get("activated_at"):
+      raise SystemExit(f"target `{target_id}` already activated at {target_row.get('activated_at')}")
+    
+    to_activate.append((target_idx, target_row, target))
+  
+  conflicts: list[tuple[str, str, list[str]]] = []
+  for i, (_, _, target_a) in enumerate(to_activate):
+    for _, _, target_b in to_activate[i+1:]:
+      overlaps = target_scopes_conflict(target_a, target_b)
+      if overlaps:
+        conflicts.append((target_a.id, target_b.id, overlaps))
+  
+  if conflicts:
+    msg = "batch activation failed: write-scope conflicts detected:\n"
+    for id_a, id_b, overlaps in conflicts:
+      msg += f"  {id_a} <-> {id_b}: {', '.join(overlaps)}\n"
+    print(msg, end='')
+    return 1
+  
+  user_name, user_email = get_git_user()
+  now = utc_now()
+  
+  for target_idx, _, target in to_activate:
+    target_row = dict(target_rows[target_idx])
+    target_row["activated_at"] = now
+    target_row["activated_by"] = user_email
+    target_rows[target_idx] = target_row
+  
+  write_target_rows(root, target_rows)
+  
+  print(f"Batch activation: {len(to_activate)} targets")
+  for _, _, target in to_activate:
+    interval = _cadence_interval(target.review_cadence)
+    review_date = (
+      (datetime.now(timezone.utc) + interval).strftime("%Y-%m-%d")
+      if interval else "unknown"
+    )
+    print(f"  {target.id}: activated, review due {review_date}")
+    if target.check:
+      print(f"    check: {target.check}")
+  
+  return 0
+
+
 def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
   rows = load_rows(root)
   ledger = load_target_ledger(root)
@@ -1933,6 +2124,16 @@ def build_parser() -> argparse.ArgumentParser:
 
   p_ready = sub.add_parser("ready")
   p_ready.set_defaults(func=cmd_ready)
+
+  p_batch = sub.add_parser("batch")
+  p_batch.add_argument("--recommend", action="store_true", help="Recommend safe parallel batch")
+  p_batch.add_argument("--max-batch-size", type=int, default=3)
+  p_batch.add_argument("--json", action="store_true")
+  p_batch.set_defaults(func=cmd_batch)
+
+  p_batch_activate = sub.add_parser("batch-activate")
+  p_batch_activate.add_argument("--targets", required=True, help="Comma-separated target IDs")
+  p_batch_activate.set_defaults(func=cmd_batch_activate)
 
   p_lessons = sub.add_parser("lessons")
   p_lessons.add_argument("--facet")
