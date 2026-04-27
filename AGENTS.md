@@ -79,12 +79,6 @@ phases. Template-admin tier is operator-only, infrequent.
 | `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
 | `doc-sync` | Changing AGENTS.md, README, CONTEXT.md, docs/adr/, .agents/skills/index.md, .agents/kb_src/, layout, command docs. | `.agents/skills/doc-sync/SKILL.md` |
 
-### Tier 3: Template-Admin (operator-only, infrequent)
-
-| Skill | Engage when | Definition |
-|-------|-------------|------------|
-| `customize-cloud-agent` | Customizing Copilot cloud agent environment, including copilot-setup-steps.yml configuration, preinstalling tools and dependencies, runners, and settings. | Builtin |
-
 ## 3. Maintenance contract
 
 Agents working in this repository must preserve the template as a
