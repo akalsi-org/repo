@@ -65,19 +65,58 @@ if [[ -z "$mypyc_bin" ]]; then
   exit 77
 fi
 
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/pyext-build.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+
+# CC/CXX wrapper: forwards to `zig cc/c++ -target <musl>`, filtering out
+# linker flags that LLD (Zig's bundled linker) rejects but Python's
+# sysconfig bakes in (they were captured from the GNU-ld build of
+# python-build-standalone). `-Wl,--exclude-libs,...` is the most common.
+mkdir -p "$scratch/cc-wrap"
+cat >"$scratch/cc-wrap/zig-cc-filter.sh" <<'WRAPEOF'
+#!/bin/sh
+# Strip linker flags Zig/LLD doesn't accept; pass everything else through.
+filtered=
+for arg in "$@"; do
+  case "$arg" in
+    -Wl,--exclude-libs,*) ;;          # GNU-ld only
+    -Wl,--exclude-libs|--exclude-libs) ;;
+    *) filtered="$filtered $arg" ;;
+  esac
+done
+# shellcheck disable=SC2086
+exec ${PYEXT_BUILD_REAL_CC} $filtered
+WRAPEOF
+cat >"$scratch/cc-wrap/zig-cxx-filter.sh" <<'WRAPEOF'
+#!/bin/sh
+filtered=
+for arg in "$@"; do
+  case "$arg" in
+    -Wl,--exclude-libs,*) ;;
+    -Wl,--exclude-libs|--exclude-libs) ;;
+    *) filtered="$filtered $arg" ;;
+  esac
+done
+# shellcheck disable=SC2086
+exec ${PYEXT_BUILD_REAL_CXX} $filtered
+WRAPEOF
+chmod +x "$scratch/cc-wrap/zig-cc-filter.sh" "$scratch/cc-wrap/zig-cxx-filter.sh"
+
 if [[ -z "${CC+x}" ]]; then
   if [[ -z "$zig_bin" ]]; then
     printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
     exit 77
   fi
-  export CC="$zig_bin cc -target $target"
+  export PYEXT_BUILD_REAL_CC="$zig_bin cc -target $target"
+  export CC="$scratch/cc-wrap/zig-cc-filter.sh"
 fi
 if [[ -z "${CXX+x}" ]]; then
   if [[ -z "$zig_bin" ]]; then
     printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
     exit 77
   fi
-  export CXX="$zig_bin c++ -target $target"
+  export PYEXT_BUILD_REAL_CXX="$zig_bin c++ -target $target"
+  export CXX="$scratch/cc-wrap/zig-cxx-filter.sh"
 fi
 
 mapfile -t py_flags < <("$python_config" --cflags --ldflags --embed)
@@ -95,8 +134,6 @@ fi
 abs_module="$(cd "$(dirname "$module_path")" && pwd -P)/$(basename "$module_path")"
 stem="$(basename "$module_path" .py)"
 out_dir="$repo_root/build/mypyc/$repo_arch"
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/pyext-build.XXXXXX")"
-trap 'rm -rf "$scratch"' EXIT
 
 cp "$abs_module" "$scratch/$stem.py"
 (

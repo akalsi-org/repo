@@ -7,6 +7,8 @@
     "tools/agent_check.py",
     "tools/agent_check_tests/**",
     "tools/facets.py",
+    "tools/pyext-build",
+    "tests/fixtures/pyext_smoke/**",
     "tools/bin/**",
     ".agents/facet/commands/**"
   ],
@@ -25,6 +27,10 @@
     {
       "name": "agent_check",
       "purpose": "Validate skill routing, doc references, and Facet-backed command inventory."
+    },
+    {
+      "name": "pyext-build",
+      "purpose": "Compile one typed Python module with mypyc into a musl CPython extension under build/mypyc/$REPO_ARCH/."
     }
   ],
   "checks": [
