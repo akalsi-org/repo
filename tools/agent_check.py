@@ -31,7 +31,9 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 
@@ -534,6 +536,67 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
   return issues
 
 
+# ---- zig toolchain smoke ---------------------------------------------------
+
+
+ZIG_SMOKE_C_SRC = "int main(void){return 0;}\n"
+ZIG_SMOKE_CXX_SRC = "int main(){return 0;}\n"
+ZIG_SMOKE_TARGET = "x86_64-linux-musl"
+
+
+def zig_smoke(zig: str | None = None) -> tuple[bool, list[str]]:
+  """Compile + run a trivial C and C++ program with the pinned Zig toolchain.
+
+  Returns ``(passed, messages)``. ``passed`` is ``False`` only when zig is
+  available *and* either compile/run step fails. If zig is not on ``PATH``
+  the smoke is skipped and ``passed`` is ``True`` with a single warning
+  message — fresh checkouts that have not run ``./repo.sh`` yet must not
+  fail this check.
+
+  Tests both ``zig cc`` (C, libc/musl) and ``zig c++`` (C++, libc++/musl)
+  end-to-end against ADR-0013's pinned target ABI.
+  """
+  zig = zig or shutil.which("zig")
+  if not zig:
+    return True, ["zig_smoke: SKIP (zig not on PATH; run ./repo.sh first)"]
+
+  messages: list[str] = []
+  ok = True
+  with tempfile.TemporaryDirectory(prefix="zig_smoke_") as td:
+    work = pathlib.Path(td)
+    cases = [
+      ("c", "cc", ZIG_SMOKE_C_SRC, "zig_smoke_c"),
+      ("c++", "c++", ZIG_SMOKE_CXX_SRC, "zig_smoke_cxx"),
+    ]
+    for lang, driver, src, name in cases:
+      src_path = work / f"{name}.{ 'cpp' if lang == 'c++' else 'c'}"
+      bin_path = work / name
+      src_path.write_text(src, encoding="utf-8")
+      compile_proc = subprocess.run(
+        [zig, driver, "-target", ZIG_SMOKE_TARGET,
+         str(src_path), "-o", str(bin_path)],
+        check=False, capture_output=True, text=True,
+      )
+      if compile_proc.returncode != 0:
+        ok = False
+        messages.append(
+          f"zig_smoke: {lang} compile failed (rc={compile_proc.returncode}): "
+          f"{compile_proc.stderr.strip().splitlines()[-1] if compile_proc.stderr else ''}"
+        )
+        continue
+      run_proc = subprocess.run(
+        [str(bin_path)], check=False, capture_output=True, text=True,
+      )
+      if run_proc.returncode != 0:
+        ok = False
+        messages.append(
+          f"zig_smoke: {lang} run failed (rc={run_proc.returncode})"
+        )
+        continue
+      messages.append(f"zig_smoke: {lang} OK ({ZIG_SMOKE_TARGET})")
+  return ok, messages
+
+
 # ---- report assembly + CLI -------------------------------------------------
 
 
@@ -611,6 +674,15 @@ def main(argv: list[str] | None = None) -> int:
     help="Print only stale-doc issues; exits non-zero if any are found.",
   )
   parser.add_argument(
+    "--zig-smoke",
+    action="store_true",
+    help=(
+      "Run the C and C++ smoke tests against the pinned Zig toolchain "
+      "(zig cc / zig c++ targeting x86_64-linux-musl). Skips cleanly with "
+      "a warning if zig is not on PATH."
+    ),
+  )
+  parser.add_argument(
     "--root",
     default=os.environ.get("REPO_ROOT") or os.getcwd(),
     help="Repository root (defaults to REPO_ROOT or cwd).",
@@ -618,6 +690,11 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
   root = pathlib.Path(args.root).resolve()
   os.chdir(root)
+  if args.zig_smoke:
+    ok, messages = zig_smoke()
+    for m in messages:
+      print(m)
+    return 0 if ok else 1
   report = build_report(root)
   if args.stale_only:
     print(_render_list("stale-doc issues:", report.stale))
