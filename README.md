@@ -37,7 +37,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `ideas` | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| `infra` | Multi-provider VM fabric verb: adopt, status, wg-up, deploy. Placeholder; subcommands land with issue #3 (see ADR-0014). |
+| `infra` | Multi-provider VM fabric verb. `adopt` brings an SSH-reachable host onto the inventory with WireGuard probe + tuned sysctls + GH-keys-sync; `status` lists adopted hosts and last-known reachability. `wg-up`, `deploy`, `provision` land with later issues. See ADR-0014. |
 
 `./repo.sh` with no args opens a subshell with `REPO_ROOT`,
 `REPO_LOCAL`, `REPO_TOOLCHAIN`, `REPO_ARCH`, `REPO_SHELL` exported.
@@ -66,8 +66,12 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `.local/` | Toolchain cache, stamps, build state. Never committed. |
 | `.agents/skills/core-infra-lead/` | Agent role for the multi-provider VM fabric (ADR-0014). |
 | `.agents/facet/core_infra/` | Facet manifest for the fabric: owned paths, considerations, doc projections. |
-| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Lands with later issues; Hetzner first. |
-| `tools/infra/` | `infra` verb implementation. Lands with issue #3. |
+| `bootstrap/providers/_template.sh` | Abstract provider shape: documents the five required functions plus credential-path convention. Not loaded at runtime. |
+| `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice (adopt-only). API impl is deferred. |
+| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Hetzner lands with later issues. |
+| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`. |
+| `tools/infra_pkg/` | Implementation modules + systemd unit templates (`units/gh-keys-sync.{service,timer}.in`) used by `infra adopt`. |
+| `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...` for operators who prefer the explicit script path. |
 
 Fast-Python hot paths use pinned `mypy[mypyc]` with the Zig musl
 toolchain. Built `.so` modules ship with products; mypyc remains a
@@ -79,6 +83,7 @@ dev/CI tool.
 |---------|---------------------------|-------|
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`) | Used by `gh` and any tool calling the GitHub API. |
 | VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`) | Read by `bootstrap/providers/<name>.sh` for `create_vm` / `destroy_vm` / `list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
+| GH-keys-sync (per-host systemd timer) | `https://github.com/<login>.keys` over plain HTTPS | Installed by `infra adopt`. `<login>` is **runtime-discovered** by `GET /user` against `~/github.token` (or `GITHUB_TOKEN`); operator can override with `--ssh-keys-github=<other>` or disable via `--ssh-keys=<path>`. **No concrete login is hard-coded anywhere in this repo.** Default refresh interval 15 minutes. Unit template at `tools/infra_pkg/units/gh-keys-sync.service.in`. |
 
 When you add a new third-party integration, document it in this
 table and in `AGENTS.md` Integrations. Never commit credentials.

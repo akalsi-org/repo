@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically refresh authorized_keys for ${LOGIN} from GitHub
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=gh-keys-sync.service
+
+[Install]
+WantedBy=timers.target

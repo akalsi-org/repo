@@ -4,7 +4,10 @@
   "owns": [
     ".agents/facet/core_infra/**",
     "bootstrap/providers/**",
-    "tools/infra/**"
+    "tools/infra",
+    "tools/infra/**",
+    "tools/infra_pkg/**",
+    "tools/infra_tests/**"
   ],
   "consider": [
     {
@@ -46,7 +49,12 @@
       "reason": "Credential-shape ignores (*.token, *.key, *.pem, .env) gate accidental commits of provider/runner secrets."
     }
   ],
-  "commands": [],
+  "commands": [
+    {
+      "name": "infra",
+      "purpose": "Multi-provider VM fabric verb: adopt an SSH-reachable host onto the inventory, list adopted hosts and last-known reachability."
+    }
+  ],
   "checks": [],
   "docs": [
     {
