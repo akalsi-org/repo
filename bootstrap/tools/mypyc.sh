@@ -46,7 +46,7 @@ setuptools==82.0.1 \
 typing_extensions==4.15.0 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
 wheel==0.46.3 \
-    --hash=sha256:4b399d56c9d9338230118d705d9737a2a4fc7815d8bc4d
+    --hash=sha256:4b399d56c9d9338230118d705d9737a2a468ccca63d5e813e2a4fc7815d8bc4d
 REQ
 
 if ! "$venv/bin/python" -m pip install --require-hashes -r "$req"; then
