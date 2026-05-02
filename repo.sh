@@ -63,6 +63,51 @@ query_bootstrap_spec() {
   )
 }
 
+bootstrap_status_color_enabled() {
+  case "${REPO_BOOTSTRAP_COLOR:-auto}" in
+    always) return 0 ;;
+    never) return 1 ;;
+    auto|"") [[ -t 2 && -z "${NO_COLOR:-}" ]] ;;
+    *)
+      printf 'repo.sh: error: REPO_BOOTSTRAP_COLOR must be auto, always, or never\n' >&2
+      exit 1
+      ;;
+  esac
+}
+
+color_bootstrap_stderr() {
+  local green=$'\033[32m'
+  local yellow=$'\033[33m'
+  local red=$'\033[31m'
+  local dim=$'\033[2m'
+  local reset=$'\033[0m'
+  local line
+  local color
+
+  while IFS= read -r line; do
+    color="$dim"
+    case "$line" in
+      *"error:"*|*"failed"*|*"mismatch"*|*"missing"*|*"not found"*) color="$red" ;;
+      *"skipping"*|*"not installed"*|*"unavailable"*) color="$yellow" ;;
+      *"cached"*|*"installed"*|*"built"*|*"host available"*) color="$green" ;;
+    esac
+    printf '%s%s%s\n' "$color" "$line" "$reset" >&2
+  done
+}
+
+source_bootstrap_spec() {
+  local spec="$1"
+
+  unset -f tool_post_install 2>/dev/null || true
+  if bootstrap_status_color_enabled; then
+    # shellcheck source=/dev/null
+    . "$spec" 2> >(color_bootstrap_stderr)
+  else
+    # shellcheck source=/dev/null
+    . "$spec"
+  fi
+}
+
 declare -A bootstrap_spec_by_name=()
 declare -A bootstrap_deps_by_name=()
 declare -A bootstrap_done_by_name=()
@@ -219,9 +264,7 @@ fi
 
 for batch in "${bootstrap_ready_batches[@]}"; do
   for name in $batch; do
-    unset -f tool_post_install 2>/dev/null || true
-    # shellcheck source=/dev/null
-    . "${bootstrap_spec_by_name[$name]}"
+    source_bootstrap_spec "${bootstrap_spec_by_name[$name]}"
   done
 done
 unset -f tool_post_install 2>/dev/null || true
