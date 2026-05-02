@@ -33,6 +33,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `setup` | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `agent` | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Validate skill routing, doc references, and Facet-backed command inventory. |
+| `pyext-build` | Compile one typed Python module with mypyc into a musl CPython extension under `build/mypyc/$REPO_ARCH/`. |
 | `ideas` | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
@@ -61,11 +62,16 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `bootstrap/tools/<tool>.sh` | Per-tool spec sourcing one helper; optional `TOOL_DEPS` declarations let `repo.sh` topologically batch bootstrap work. `python.sh` pins repo Python and `bwrap.sh` pins the sandbox backend. |
 | `bootstrap/vars/local_cache_key.sh` | CI cache-key sentinel. |
 | `tools/` | Every command exposed via `./repo.sh`. |
+| `tests/fixtures/pyext_smoke/` | Smoke fixture for mypyc-built Python extension import checks. |
 | `.local/` | Toolchain cache, stamps, build state. Never committed. |
 | `.agents/skills/core-infra-lead/` | Agent role for the multi-provider VM fabric (ADR-0014). |
 | `.agents/facet/core_infra/` | Facet manifest for the fabric: owned paths, considerations, doc projections. |
 | `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Lands with later issues; Hetzner first. |
 | `tools/infra/` | `infra` verb implementation. Lands with issue #3. |
+
+Fast-Python hot paths use pinned `mypy[mypyc]` with the Zig musl
+toolchain. Built `.so` modules ship with products; mypyc remains a
+dev/CI tool.
 
 ## Integrations
 

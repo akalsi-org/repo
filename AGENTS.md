@@ -180,6 +180,7 @@ remain isolated by worktree.
 | `bootstrap/tools/<tool>.sh` | Per-tool spec sourcing one helper. Specs may declare `TOOL_DEPS`; `repo.sh` topologically batches them. `python.sh` pins the repo machinery interpreter. |
 | `bootstrap/vars/local_cache_key.sh` | CI cache-key sentinel. Bump `cache_epoch` to invalidate helpers. |
 | `tools/` | Every command exposed via `./repo.sh`. |
+| `tests/fixtures/pyext_smoke/` | Smoke fixture for mypyc-built Python extension import checks. |
 | `tools/git_hooks/pre-commit` | Managed pre-commit hook source. |
 | `.local/toolchain/$REPO_ARCH/` | Toolchain install prefix, including pinned Python. Cached, not committed. |
 | `.local/stamps/` | Tool install stamps + `initialized` marker. |
@@ -211,7 +212,8 @@ remain isolated by worktree.
   agent runtime discovery convention. `agent_check` rejects `_`
   here.
 - Do not add hyphenated command aliases in this template; commands
-  are named once with underscores.
+  are named once with underscores. Exception: `pyext-build` keeps
+  the issue-specified name for the mypyc extension builder.
 
 ## 7. Integrations
 
@@ -255,7 +257,9 @@ commands run through the pinned musl CPython 3.14 installed by
 musl loader from the bwrap bootstrap. `python.sh` declares
 `TOOL_DEPS=(bwrap)`, so `repo.sh` dependency planning runs bwrap before
 Python and the host does not need musl installed. Alpine/static
-product portability is the baseline. CI also runs `./repo.sh system_test`,
+product portability is the baseline. Fast-Python hot paths compile
+with pinned `mypy[mypyc]` and the Zig musl toolchain; output `.so`
+modules ship with products while mypyc stays on dev/CI machines. CI also runs `./repo.sh system_test`,
 whose base primitive is a three-node cluster. Every node gets the same
 guest service port from the scenario manifest and a distinct cluster
 IP; host-side ports are assigned per node for external reachability
