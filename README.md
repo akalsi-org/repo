@@ -69,7 +69,6 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `.agents/facet/core_infra/` | Facet manifest for the fabric: owned paths, considerations, doc projections. |
 | `bootstrap/providers/_template.sh` | Abstract provider shape: documents the five required functions plus credential-path convention. Not loaded at runtime. |
 | `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice (adopt-only). API impl is deferred. |
-<<<<<<< HEAD
 | `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Hetzner uses CAX ARM64 by default; x86 capacity is Contabo BYO via `adopt`. |
 | `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`, `vxlan-up`, `hosts-render`, `provision-hetzner`, `decommission`. |
 | `tools/infra_pkg/` | Implementation modules + systemd unit templates (`units/gh-keys-sync.{service,timer}.in`, `units/wg-overlay@.service.in`, `units/vxlan-overlay@.service.in`) used by `infra adopt`, `infra wg-up`, and `infra vxlan-up`. The WG and VXLAN templates are the systemd templated form (`@.service`) — `${CLUSTER_ID}` and (for VXLAN) `${EXECSTART_BLOCK}` are substituted at install time, `%i` carries the cluster id at runtime. |
