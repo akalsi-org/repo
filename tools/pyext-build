@@ -68,62 +68,10 @@ fi
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/pyext-build.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
-# CC/CXX wrapper: forwards to `zig cc/c++ -target <musl>`, filtering out
-# linker flags that LLD (Zig's bundled linker) rejects but Python's
-# sysconfig bakes in (they were captured from the GNU-ld build of
-# python-build-standalone). `-Wl,--exclude-libs,...` is the most common.
-mkdir -p "$scratch/cc-wrap"
-cat >"$scratch/cc-wrap/zig-cc-filter.sh" <<'WRAPEOF'
-#!/bin/sh
-# Strip linker flags Zig/LLD doesn't accept; pass everything else through.
-filtered=
-for arg in "$@"; do
-  case "$arg" in
-    -Wl,--exclude-libs,*) ;;          # GNU-ld only
-    -Wl,--exclude-libs|--exclude-libs) ;;
-    *) filtered="$filtered $arg" ;;
-  esac
-done
-# shellcheck disable=SC2086
-exec ${PYEXT_BUILD_REAL_CC} $filtered
-WRAPEOF
-cat >"$scratch/cc-wrap/zig-cxx-filter.sh" <<'WRAPEOF'
-#!/bin/sh
-filtered=
-for arg in "$@"; do
-  case "$arg" in
-    -Wl,--exclude-libs,*) ;;
-    -Wl,--exclude-libs|--exclude-libs) ;;
-    *) filtered="$filtered $arg" ;;
-  esac
-done
-# shellcheck disable=SC2086
-exec ${PYEXT_BUILD_REAL_CXX} $filtered
-WRAPEOF
-chmod +x "$scratch/cc-wrap/zig-cc-filter.sh" "$scratch/cc-wrap/zig-cxx-filter.sh"
-
-if [[ -z "${CC+x}" ]]; then
-  if [[ -z "$zig_bin" ]]; then
-    printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
-    exit 77
-  fi
-  export PYEXT_BUILD_REAL_CC="$zig_bin cc -target $target"
-  export CC="$scratch/cc-wrap/zig-cc-filter.sh"
-fi
-if [[ -z "${CXX+x}" ]]; then
-  if [[ -z "$zig_bin" ]]; then
-    printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
-    exit 77
-  fi
-  export PYEXT_BUILD_REAL_CXX="$zig_bin c++ -target $target"
-  export CXX="$scratch/cc-wrap/zig-cxx-filter.sh"
-fi
-
-mapfile -t py_flags < <("$python_config" --cflags --ldflags --embed)
-cflags="${py_flags[0]:-}"
-ldflags="${py_flags[*]:1}"
-export CFLAGS="${CFLAGS:-} $cflags"
-export LDFLAGS="${LDFLAGS:-} $ldflags"
+. "$repo_root/tools/pyext_build_env.sh"
+pyext_build_setup_env "$scratch"
+python_bin="$PYTHON"
+python_config="$PYTHON_CONFIG"
 
 ext_suffix="$("$python_bin" -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or "")')"
 if [[ -z "$ext_suffix" ]]; then
