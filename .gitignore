@@ -5,6 +5,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+.claude/worktrees/
 
 # Credentials — never commit. See AGENTS.md Integrations + ADR-0014.
 *.token
