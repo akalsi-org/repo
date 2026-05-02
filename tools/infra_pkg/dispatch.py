@@ -1,8 +1,10 @@
 """`infra` verb dispatcher entry point.
 
 Subcommands:
-  infra adopt <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
-  infra status [--probe]
+  infra adopt        <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
+  infra status       [--probe]
+  infra wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
+  infra wg-peer-add  <node_a_ssh> <node_b_ssh>
 
 Caveman style on user-facing strings.
 """
@@ -21,14 +23,16 @@ def _repo_root() -> pathlib.Path:
   return pathlib.Path(__file__).resolve().parents[2]
 
 
-SUBCOMMANDS = ("adopt", "status")
+SUBCOMMANDS = ("adopt", "status", "wg-up", "wg-peer-add")
 
 
 def _usage() -> str:
   return (
     "usage: infra <subcommand> [args...]\n"
-    "  adopt   <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
-    "  status  [--probe]\n"
+    "  adopt        <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
+    "  status       [--probe]\n"
+    "  wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
+    "  wg-peer-add  <node_a_ssh> <node_b_ssh>\n"
   )
 
 
@@ -53,4 +57,10 @@ def main(argv: Sequence[str] | None = None) -> int:
   if sub == "status":
     from tools.infra_pkg.status import main as status_main
     return status_main(rest, repo_root=root)
+  if sub == "wg-up":
+    from tools.infra_pkg.wg_cmd import wg_up_main
+    return wg_up_main(rest, repo_root=root)
+  if sub == "wg-peer-add":
+    from tools.infra_pkg.wg_cmd import wg_peer_add_main
+    return wg_peer_add_main(rest, repo_root=root)
   return 2

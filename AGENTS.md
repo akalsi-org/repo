@@ -190,8 +190,8 @@ remain isolated by worktree.
 | `bootstrap/providers/_template.sh` | Abstract provider shape: documents `create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list` and the `~/<provider>.token` mode-0600 convention. Not loaded at runtime. |
 | `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice. API surface is deferred; adopt is the only path to a Contabo host today. |
 | `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin reading `~/<provider>.token`. Hetzner lands with later issues. |
-| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`. `wg-up`, `deploy`, `provision` land with later issues. |
-| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates) and systemd unit templates under `units/`. |
+| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`. `deploy`, `provision` land with later issues. |
+| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates, WG keypair/config helpers in `wg.py` + `wg_cmd.py`) and systemd unit templates under `units/`, including `units/wg-overlay@.service.in` — the systemd templated form (`@.service`) for the WG underlay. `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime, and `WantedBy=multi-user.target` makes the unit reboot-survivable once enabled. |
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...`. |
 | `tools/infra_tests/` | Unit tests for the adopt-side pure helpers; no real SSH or network. |
 | `.local/infra/inventory.json` | Adopted-host inventory (gitignored under `.local/`). |
@@ -207,7 +207,7 @@ remain isolated by worktree.
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync) and status (list adopted hosts + last-known reachable). wg-up, deploy, provision land with later issues. |
+| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), and wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later). deploy, provision land with later issues. |
 
 ## 6. Naming
 
@@ -248,6 +248,59 @@ systemd-deploy artifacts) is **discovered at runtime** via
 `GET /user` against `~/github.token`. No tracked file in this repo
 may contain a concrete GitHub login or org as a literal string.
 Operators may override per host. See ADR-0014.
+
+## 13. Operator runbook — 2-node WG underlay smoke
+
+This is the live-host validation flow for ADR-0014's WireGuard
+underlay. The agent does not run real SSH against hosts in tests;
+the operator runs this manually after the code lands.
+
+Pre-requisites:
+- Two SSH-reachable hosts (BYO Contabo VPS or otherwise) accepting
+  root or passwordless-sudo from the operator's workstation.
+- `wireguard-tools` installed on both (`apt install wireguard-tools`
+  on Debian/Ubuntu; `infra adopt` already probes `modprobe wireguard`).
+- A free UDP port on each host for WG listen (default `51820`).
+
+Steps (replace `<a>`, `<b>` with your `user@host` strings, `<C>` with
+the cluster id, and pick distinct node ids):
+
+```
+./repo.sh infra adopt contabo <a> <C> 1
+./repo.sh infra adopt contabo <b> <C> 2
+./repo.sh infra wg-up <a>
+./repo.sh infra wg-up <b>
+./repo.sh infra wg-peer-add <a> <b>
+```
+
+Acceptance checks (run on each host):
+
+```
+ssh <a> 'wg show'
+ssh <a> 'ping -c 3 10.200.<C>.2'
+ssh <b> 'ping -c 3 10.200.<C>.1'
+ssh <a> 'systemctl is-enabled wg-overlay@<C>.service'
+ssh <a> 'sudo reboot' && sleep 60 && ssh <a> 'wg show'
+```
+
+Expected:
+- `wg show` lists the other node's pubkey and a recent
+  "latest handshake" timestamp.
+- ICMP works in both directions over `10.200.<C>.x`.
+- `systemctl is-enabled` prints `enabled` (reboot survival).
+- After reboot, `wg show` again reports an active handshake without
+  any operator intervention.
+
+MTU: the underlay link is whatever the provider gives you (typically
+1500 on commodity VPS). WireGuard's internal MTU lands around 1420
+after the 80-byte WG header; do not lower further yet. The VXLAN
+overlay (issue #5) defaults its inner MTU to 1370 on top of that.
+
+Private-key invariants (CODE-REVIEWABLE):
+- The private key only exists on the host at
+  `/etc/wireguard/wg-c<cluster>.key`, mode `0600`, owned `root:root`.
+  It is never written under the repo root and never crosses back
+  over SSH from the host. Inventory carries the public key only.
 
 ## 14. CI
 

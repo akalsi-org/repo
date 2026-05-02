@@ -12,6 +12,16 @@ Host record fields:
 - adopted_at        (ISO 8601 UTC)
 - last_reachable_at (ISO 8601 UTC; updated by `infra status`)
 - last_reachable    (bool; "" until first probe)
+- wg_pubkey         (str; populated by `infra wg-up`. Public material only;
+                     the private key lives only on the host at
+                     /etc/wireguard/wg-c<cluster>.key mode 0600.)
+- wg_underlay_endpoint (str "host:port"; the public endpoint peers dial)
+- wg_listen_port    (int; default 51820)
+- peers             (list of {cluster_id, node_id, wg_pubkey,
+                     wg_underlay_endpoint}; managed by `infra wg-peer-add`)
+
+Schema migration: existing host records without WG fields keep working;
+wg-up populates the missing fields lazily on first run.
 """
 from __future__ import annotations
 

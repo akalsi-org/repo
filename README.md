@@ -37,7 +37,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `ideas` | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| `infra` | Multi-provider VM fabric verb. `adopt` brings an SSH-reachable host onto the inventory with WireGuard probe + tuned sysctls + GH-keys-sync; `status` lists adopted hosts and last-known reachability. `wg-up`, `deploy`, `provision` land with later issues. See ADR-0014. |
+| `infra` | Multi-provider VM fabric verb. `adopt` brings an SSH-reachable host onto the inventory with WireGuard probe + tuned sysctls + GH-keys-sync; `status` lists adopted hosts and last-known reachability; `wg-up <ssh_target>` generates the per-cluster WG keypair on the host, renders `/etc/wireguard/wg-c<cluster>.conf` from the local peer table, installs the `wg-overlay@<cluster>.service` unit, and enables it for reboot survival; `wg-peer-add <a> <b>` registers two adopted hosts as peers symmetrically and re-renders both configs. `deploy`, `provision` land with later issues. See ADR-0014. |
 
 `./repo.sh` with no args opens a subshell with `REPO_ROOT`,
 `REPO_LOCAL`, `REPO_TOOLCHAIN`, `REPO_ARCH`, `REPO_SHELL` exported.
@@ -69,8 +69,8 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `bootstrap/providers/_template.sh` | Abstract provider shape: documents the five required functions plus credential-path convention. Not loaded at runtime. |
 | `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice (adopt-only). API impl is deferred. |
 | `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Hetzner lands with later issues. |
-| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`. |
-| `tools/infra_pkg/` | Implementation modules + systemd unit templates (`units/gh-keys-sync.{service,timer}.in`) used by `infra adopt`. |
+| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`. |
+| `tools/infra_pkg/` | Implementation modules + systemd unit templates (`units/gh-keys-sync.{service,timer}.in`, `units/wg-overlay@.service.in`) used by `infra adopt` and `infra wg-up`. The WG template is the systemd templated form (`@.service`) — `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime. |
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...` for operators who prefer the explicit script path. |
 
 Fast-Python hot paths use pinned `mypy[mypyc]` with the Zig musl
