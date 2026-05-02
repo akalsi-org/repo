@@ -220,6 +220,14 @@ remain isolated by worktree.
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`). | Used by `gh` and any tool calling the GitHub API. Permissions on the file should be `0600`. |
 | VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`). | Read by `bootstrap/providers/<name>.sh` for `create_vm`/`destroy_vm`/`list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
 
+### Toolchain
+
+| Tool | Spec | Role |
+|------|------|------|
+| Python (musl CPython 3.14) | `bootstrap/tools/python.sh` | Repo machinery interpreter. See ADR-0008. |
+| C/C++ (Zig + libc++) | `bootstrap/tools/zig.sh` | Single bundled C/C++ toolchain (clang + LLD + libc + libc++). Default target `*-linux-musl`; libstdc++ deliberately excluded. See ADR-0013. |
+| bwrap (Alpine minirootfs) | `bootstrap/tools/bwrap.sh` | Sandbox + musl loader source for the Python wrapper. |
+
 When adding a new third-party integration, document it in this table
 and in `README.md` Integrations. Read credentials from
 `~/<service>.token` or an environment variable; never commit them to
