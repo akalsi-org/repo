@@ -17,3 +17,4 @@
 | 0013 | [Zig as the single C/C++ toolchain, libc++ only](0013_c_cpp_toolchain_zig_libcxx.md) |
 | 0014 | [Core infra: WireGuard underlay + VXLAN overlay + gossip discovery](0014_core_infra_fabric.md) |
 | 0016 | [Undeniable Quality Contract](0016_quality_bar.md) |
+| 0017 | [FlatBuffer bytes-first decoding](0017_flatbuffer_bytes_first_decoding.md) |
