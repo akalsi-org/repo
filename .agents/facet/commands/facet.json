@@ -8,6 +8,7 @@
     "tools/agent_check_tests/**",
     "tools/facets.py",
     "tools/pyext-build",
+    "tools/pyext_build_env.sh",
     "tests/fixtures/pyext_smoke/**",
     "tools/bin/**",
     ".agents/facet/commands/**"
