@@ -1,10 +1,12 @@
 """`infra` verb dispatcher entry point.
 
 Subcommands:
-  infra adopt        <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
-  infra status       [--probe]
-  infra wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
-  infra wg-peer-add  <node_a_ssh> <node_b_ssh>
+  infra adopt         <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
+  infra status        [--probe]
+  infra wg-up         <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
+  infra wg-peer-add   <node_a_ssh> <node_b_ssh>
+  infra vxlan-up      <ssh_target> [--mtu N] [--dstport N]
+  infra hosts-render  <ssh_target>
 
 Caveman style on user-facing strings.
 """
@@ -23,16 +25,20 @@ def _repo_root() -> pathlib.Path:
   return pathlib.Path(__file__).resolve().parents[2]
 
 
-SUBCOMMANDS = ("adopt", "status", "wg-up", "wg-peer-add")
+SUBCOMMANDS = (
+  "adopt", "status", "wg-up", "wg-peer-add", "vxlan-up", "hosts-render",
+)
 
 
 def _usage() -> str:
   return (
     "usage: infra <subcommand> [args...]\n"
-    "  adopt        <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
-    "  status       [--probe]\n"
-    "  wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
-    "  wg-peer-add  <node_a_ssh> <node_b_ssh>\n"
+    "  adopt         <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
+    "  status        [--probe]\n"
+    "  wg-up         <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
+    "  wg-peer-add   <node_a_ssh> <node_b_ssh>\n"
+    "  vxlan-up      <ssh_target> [--mtu N] [--dstport N]\n"
+    "  hosts-render  <ssh_target>\n"
   )
 
 
@@ -63,4 +69,10 @@ def main(argv: Sequence[str] | None = None) -> int:
   if sub == "wg-peer-add":
     from tools.infra_pkg.wg_cmd import wg_peer_add_main
     return wg_peer_add_main(rest, repo_root=root)
+  if sub == "vxlan-up":
+    from tools.infra_pkg.vxlan_cmd import vxlan_up_main
+    return vxlan_up_main(rest, repo_root=root)
+  if sub == "hosts-render":
+    from tools.infra_pkg.vxlan_cmd import hosts_render_main
+    return hosts_render_main(rest, repo_root=root)
   return 2

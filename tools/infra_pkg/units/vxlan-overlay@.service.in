@@ -1,0 +1,18 @@
+[Unit]
+Description=VXLAN overlay vxlan-c%i for cluster ${CLUSTER_ID}
+Wants=network-online.target
+After=network-online.target wg-overlay@%i.service
+Requires=wg-overlay@%i.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# CLUSTER_ID + EXECSTART_BLOCK are substituted by tools/infra_pkg/vxlan_cmd
+# at vxlan-up time. %i is the systemd instance (cluster id) and resolves
+# the VXLAN interface name vxlan-c<cluster>. The unit is enabled per
+# instance so `systemctl enable vxlan-overlay@<cluster>.service` survives
+# reboot via WantedBy=multi-user.target below.
+${EXECSTART_BLOCK}
+
+[Install]
+WantedBy=multi-user.target

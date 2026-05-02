@@ -19,9 +19,13 @@ Host record fields:
 - wg_listen_port    (int; default 51820)
 - peers             (list of {cluster_id, node_id, wg_pubkey,
                      wg_underlay_endpoint}; managed by `infra wg-peer-add`)
+- inner_mtu         (int; default 1370; per-cluster VXLAN inner MTU,
+                     populated by `infra vxlan-up` on first run)
+- vxlan_dstport     (int; default 4789; VXLAN UDP destination port,
+                     populated by `infra vxlan-up` on first run)
 
-Schema migration: existing host records without WG fields keep working;
-wg-up populates the missing fields lazily on first run.
+Schema migration: existing host records without WG/VXLAN fields keep
+working; wg-up + vxlan-up populate missing fields lazily on first run.
 """
 from __future__ import annotations
 
