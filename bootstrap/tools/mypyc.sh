@@ -108,5 +108,16 @@ WRAP
   chmod +x "$bin_path"
 done
 
+# Surface entry points on PATH via $REPO_TOOLCHAIN/bin/. repo.sh adds
+# $REPO_TOOLCHAIN/bin to PATH, so this lets `./repo.sh mypyc ...` and
+# `mypyc` (inside ./repo.sh's subshell) work directly. Same pattern as
+# zig.sh's bin/zig symlink.
+mkdir -p "$REPO_TOOLCHAIN/bin"
+for bin_name in mypyc mypy dmypy stubgen stubtest; do
+  if [[ -x "$venv/bin/$bin_name" ]]; then
+    ln -sfn "../mypyc/bin/$bin_name" "$REPO_TOOLCHAIN/bin/$bin_name"
+  fi
+done
+
 printf '%s\n' "$TOOL_VERSION" >"$stamp"
 printf 'mypyc: installed (%s, %s)\n' "$TOOL_VERSION" "$REPO_ARCH" >&2
