@@ -30,6 +30,7 @@ import fnmatch
 import json
 import os
 import pathlib
+import platform
 import re
 import shutil
 import subprocess
@@ -733,7 +734,16 @@ def doc_coverage_issues(root: pathlib.Path) -> list[str]:
 
 ZIG_SMOKE_C_SRC = "int main(void){return 0;}\n"
 ZIG_SMOKE_CXX_SRC = "int main(){return 0;}\n"
-ZIG_SMOKE_TARGET = "x86_64-linux-musl"
+
+
+def zig_smoke_target() -> str:
+  arch = os.environ.get("REPO_ARCH") or platform.machine()
+  match arch:
+    case "amd64":
+      arch = "x86_64"
+    case "arm64":
+      arch = "aarch64"
+  return f"{arch}-linux-musl"
 
 
 def zig_smoke(zig: str | None = None) -> tuple[bool, list[str]]:
@@ -754,6 +764,7 @@ def zig_smoke(zig: str | None = None) -> tuple[bool, list[str]]:
 
   messages: list[str] = []
   ok = True
+  target = zig_smoke_target()
   with tempfile.TemporaryDirectory(prefix="zig_smoke_") as td:
     work = pathlib.Path(td)
     cases = [
@@ -765,7 +776,7 @@ def zig_smoke(zig: str | None = None) -> tuple[bool, list[str]]:
       bin_path = work / name
       src_path.write_text(src, encoding="utf-8")
       compile_proc = subprocess.run(
-        [zig, driver, "-target", ZIG_SMOKE_TARGET,
+        [zig, driver, "-target", target,
          str(src_path), "-o", str(bin_path)],
         check=False, capture_output=True, text=True,
       )
@@ -785,7 +796,7 @@ def zig_smoke(zig: str | None = None) -> tuple[bool, list[str]]:
           f"zig_smoke: {lang} run failed (rc={run_proc.returncode})"
         )
         continue
-      messages.append(f"zig_smoke: {lang} OK ({ZIG_SMOKE_TARGET})")
+      messages.append(f"zig_smoke: {lang} OK ({target})")
   return ok, messages
 
 

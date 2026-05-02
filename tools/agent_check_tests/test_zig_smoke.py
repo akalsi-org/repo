@@ -5,7 +5,7 @@ warning so fresh checkouts that have not bootstrapped do not fail.
 
 Happy path: when ``zig`` is on PATH (post-bootstrap or developer-local
 install) both ``zig cc`` and ``zig c++`` must compile + run a trivial
-program against ``x86_64-linux-musl``.
+program against the native ``$REPO_ARCH-linux-musl`` target.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import unittest
 from unittest import mock
 
 from tools.agent_check import zig_smoke
+from tools.agent_check import zig_smoke_target
 
 
 class ZigSmokeSkipTest(unittest.TestCase):
@@ -27,6 +28,14 @@ class ZigSmokeSkipTest(unittest.TestCase):
     self.assertEqual(len(messages), 1)
     self.assertIn("SKIP", messages[0])
     self.assertIn("zig", messages[0].lower())
+
+
+class ZigSmokeTargetTest(unittest.TestCase):
+  def test_target_uses_repo_arch(self) -> None:
+    with mock.patch.dict(os.environ, {"REPO_ARCH": "aarch64"}):
+      self.assertEqual(zig_smoke_target(), "aarch64-linux-musl")
+    with mock.patch.dict(os.environ, {"REPO_ARCH": "x86_64"}):
+      self.assertEqual(zig_smoke_target(), "x86_64-linux-musl")
 
 
 @unittest.skipUnless(shutil.which("zig"), "zig not on PATH; smoke happy-path needs an installed toolchain")
