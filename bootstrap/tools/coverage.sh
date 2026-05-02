@@ -4,8 +4,7 @@ set -euo pipefail
 TOOL_NAME=coverage
 TOOL_VERSION=7.13.0
 TOOL_DEPS=(python)
-COVERAGE_CP314_MUSL_X86_64_SHA256=4b5de7d4583e60d5fd246dd57fcd3a8aa23c6e118a8c72b38adf666ba8e7e927
-COVERAGE_CP314_MUSL_AARCH64_SHA256=8069e831f205d2ff1f3d355e82f511eb7c5522d7d413f5db5756b772ec8697f8
+COVERAGE_PY3_NONE_ANY_SHA256=850d2998f380b1e266459ca5b47bc9e7daf9af1d070f66317972f382d46f1904
 
 if [[ "${BOOTSTRAP_PLAN_ONLY:-0}" == 1 ]]; then
   return 0 2>/dev/null || exit 0
@@ -34,8 +33,7 @@ mkdir -p "$site_pkgs" "$REPO_TOOLCHAIN/bin" "$REPO_LOCAL/stamps"
 req_file="$REPO_LOCAL/coverage-requirements.txt"
 cat >"$req_file" <<REQ
 coverage==$TOOL_VERSION \\
-  --hash=sha256:$COVERAGE_CP314_MUSL_X86_64_SHA256 \\
-  --hash=sha256:$COVERAGE_CP314_MUSL_AARCH64_SHA256
+  --hash=sha256:$COVERAGE_PY3_NONE_ANY_SHA256
 REQ
 
 export PYTHONEXECUTABLE="$pinned_py"

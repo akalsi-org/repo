@@ -183,6 +183,8 @@ remain isolated by worktree.
 | `tools/` | Every command exposed via `./repo.sh`. |
 | `tests/fixtures/pyext_smoke/` | Smoke fixture for mypyc-built Python extension import checks. |
 | `tools/git_hooks/pre-commit` | Managed pre-commit hook source. |
+| `tools/pyext-build` | mypyc extension builder. Accepts source paths or `--manifest pyext.toml`; writes package-shaped `.so` outputs under `build/mypyc/$REPO_ARCH/`. |
+| `tools/pyext_tests/` | Unit tests for `pyext-build` argument parsing, manifest reads, and package-shaped output staging. |
 | `.local/toolchain/$REPO_ARCH/` | Toolchain install prefix, including pinned Python. Cached, not committed. |
 | `.local/stamps/` | Tool install stamps + `initialized` marker. |
 | `.claude/skills`, `.codex/skills`, `.github/instructions/skills` | Symlinks to `.agents/skills/`. Multi-agent surface. |
@@ -212,6 +214,7 @@ remain isolated by worktree.
 | `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/ + target ledger + starter backlog, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
 | `agent_check` | Python | Validate skill routing, repo-truth schemas, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
+| `pyext-build` | Bash | Compile typed Python modules with mypyc into package-shaped musl CPython extensions under `build/mypyc/$REPO_ARCH/`; accepts source paths or `--manifest pyext.toml`. |
 | `ideas` | Python | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |

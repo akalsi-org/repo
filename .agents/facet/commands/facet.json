@@ -10,6 +10,7 @@
     "tools/facets.py",
     "tools/pyext-build",
     "tools/pyext_build_env.sh",
+    "tools/pyext_tests/**",
     "tests/fixtures/pyext_smoke/**",
     "tools/bin/**",
     "tools/lint",
@@ -42,7 +43,7 @@
     {
       "name": "pyext-build",
       "adr": "docs/adr/0008_pinned_binary_python.md",
-      "purpose": "Compile one typed Python module with mypyc into a musl CPython extension under build/mypyc/$REPO_ARCH/."
+      "purpose": "Compile typed Python modules with mypyc into package-shaped musl CPython extensions under build/mypyc/$REPO_ARCH/ from source paths or pyext.toml."
     },
     {
       "name": "lint",

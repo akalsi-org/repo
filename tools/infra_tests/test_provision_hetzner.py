@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -60,7 +61,7 @@ class ProvisionHetznerTest(unittest.TestCase):
     answers = iter(["", "", "", "7", "3", "you are seed", ""])
     args = provision_hetzner.build_parser().parse_args(["--no-ssh-wait"])
     buf = io.StringIO()
-    with redirect_stdout(buf):
+    with mock.patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}), redirect_stdout(buf):
       rc = provision_hetzner.run(
         args,
         repo_root=self.root,
@@ -85,7 +86,7 @@ class ProvisionHetznerTest(unittest.TestCase):
     answers = iter(["fsn1", "cx23", "7", "3", "you are seed", ""])
     args = provision_hetzner.build_parser().parse_args(["--arch=amd64", "--no-ssh-wait"])
     buf = io.StringIO()
-    with redirect_stdout(buf):
+    with mock.patch.dict("os.environ", {"GITHUB_TOKEN": "test-token"}), redirect_stdout(buf):
       provision_hetzner.run(
         args,
         repo_root=self.root,
