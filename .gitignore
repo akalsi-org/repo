@@ -2,6 +2,9 @@
 build/
 __pycache__/
 *.py[cod]
+.coverage
+.coverage.*
+htmlcov/
 
 # Credentials — never commit. See AGENTS.md Integrations + ADR-0014.
 *.token

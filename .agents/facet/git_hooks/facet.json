@@ -20,6 +20,7 @@
   "commands": [
     {
       "name": "setup",
+      "adr": "docs/adr/0016_quality_bar.md",
       "purpose": "Install / status / uninstall managed git hooks and configured VSCode plugins."
     }
   ],
@@ -27,6 +28,11 @@
     {
       "name": "setup_status",
       "command": "./repo.sh setup --status",
+      "closeout": true
+    },
+    {
+      "name": "pre_push_hook",
+      "command": "test -x tools/git_hooks/pre-push",
       "closeout": true
     }
   ],

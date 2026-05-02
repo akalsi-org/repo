@@ -24,6 +24,7 @@
   "commands": [
     {
       "name": "agent",
+      "no_adr": "Knowledge-base command is Template substrate documented in AGENTS/README; no irreversible design decision yet.",
       "purpose": "Query and maintain the repository agent knowledge base."
     }
   ],

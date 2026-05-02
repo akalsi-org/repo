@@ -16,7 +16,7 @@ import json
 import pathlib
 import sys
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Callable, TextIO, Sequence
 
 from tools.personality_pkg import (
   claude_adapter, codex_adapter, copilot_adapter, definitions, runner, state,
@@ -53,12 +53,18 @@ def _now_iso() -> str:
   return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _resolve_prompt(args: argparse.Namespace, in_stream) -> str | None:
-  if args.prompt is None:
+AskInvocation = (
+  claude_adapter.Invocation | codex_adapter.Invocation | copilot_adapter.Invocation
+)
+
+
+def _resolve_prompt(args: argparse.Namespace, in_stream: TextIO) -> str | None:
+  prompt = args.prompt
+  if prompt is None:
     return None
-  if args.prompt == "-":
+  if prompt == "-":
     return in_stream.read().rstrip("\n")
-  return args.prompt
+  return str(prompt)
 
 
 def _build_adapter_invocation(
@@ -69,7 +75,7 @@ def _build_adapter_invocation(
   use_replay: bool,
   repo_root: pathlib.Path,
   state_dir: pathlib.Path,
-):
+) -> AskInvocation:
   if cfg.cli == "claude":
     return claude_adapter.ask_argv(
       cfg, session_id=session_id, prompt=prompt_for_cli, use_replay=use_replay,
@@ -126,10 +132,10 @@ def run(
   *,
   repo_root: pathlib.Path,
   cli_runner: runner.Runner | None = None,
-  out=sys.stdout,
-  err=sys.stderr,
-  in_stream=sys.stdin,
-  now_iso=_now_iso,
+  out: TextIO = sys.stdout,
+  err: TextIO = sys.stderr,
+  in_stream: TextIO = sys.stdin,
+  now_iso: Callable[[], str] = _now_iso,
 ) -> int:
   cli_runner = cli_runner or runner.default_runner
   prompt = _resolve_prompt(args, in_stream)
@@ -183,9 +189,18 @@ def run(
 
 
 def _ask_inside_lock(
-  *, args, cfg, repo_root, prompt, cli_runner, sdir, out, err,
-  defaults, now_iso,
-):
+  *,
+  args: argparse.Namespace,
+  cfg: definitions.EffectiveConfig,
+  repo_root: pathlib.Path,
+  prompt: str,
+  cli_runner: runner.Runner,
+  sdir: pathlib.Path,
+  out: TextIO,
+  err: TextIO,
+  defaults: definitions.Defaults,
+  now_iso: Callable[[], str],
+) -> int:
   meta = state.read_session_meta(repo_root, cfg.name)
   replay_required = bool(meta.get("replay_required"))
   forced_replay = args.replay or args.no_native_resume or replay_required
@@ -273,7 +288,11 @@ def _ask_inside_lock(
     }, now_iso=now_iso)
     return EXIT_CLI
 
-  last_message_path = getattr(invocation, "last_message_path", None)
+  last_message_path = (
+    invocation.last_message_path
+    if isinstance(invocation, codex_adapter.Invocation)
+    else None
+  )
   reply, new_session_id = _extract_reply(
     cfg, result, last_message_path=last_message_path,
   )

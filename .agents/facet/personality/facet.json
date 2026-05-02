@@ -32,6 +32,7 @@
   "commands": [
     {
       "name": "personality",
+      "no_adr": "Tracked by issue #14 and docs/research/multi_cli_personality_skill_spec.md; ADR promotion deferred until interface hardens.",
       "purpose": "Multi-CLI personality verb (#14). Subcommands list (roster + last_active), init (scaffold definition), as-root (interactive persistent session via native resume or fresh seed), ask (one-shot non-interactive; native resume preferred, transcript replay fallback), and clear (wipe `.local/personalities/<name>/`; definition preserved). Definitions at `.agents/personalities/<name>/personality.md`, defaults at `.agents/personalities/_defaults.yaml`."
     }
   ],

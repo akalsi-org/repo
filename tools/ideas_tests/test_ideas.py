@@ -778,19 +778,33 @@ class IdeasCliTest(unittest.TestCase):
   def test_report_prefers_learning_ledger_receipt_with_evidence(self) -> None:
     write(
       self.root / ".agents/kb_src/tables/learning_ledger.jsonl",
-      json.dumps(
-        {
-          "id": "lesson_ready_bet",
-          "target_id": TARGET_ID,
-          "facet": "ideas",
-          "source_idea": "source",
-          "source_artifact": "tools/ideas.py",
-          "check": "./repo.sh ideas report --cost",
-          "lesson": "operators need one cited run-now bet from repo truth",
-          "follow_up": "emit one evidence-backed next bet receipt from learning ledger rows",
-          "reviewed_at": "2026-04-26T12:00:00+00:00",
-        }
-      ) + "\n",
+      "".join(
+        json.dumps(row) + "\n"
+        for row in [
+          {
+            "id": "lesson_ready_bet",
+            "target_id": TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "source",
+            "source_artifact": "tools/ideas.py",
+            "check": "./repo.sh ideas report --cost",
+            "lesson": "operators need one cited run-now bet from repo truth",
+            "follow_up": "emit one evidence-backed next bet receipt from learning ledger rows",
+            "reviewed_at": "2026-04-26T12:00:00+00:00",
+          },
+          {
+            "id": "lesson_low_signal",
+            "target_id": REVIEW_TARGET_ID,
+            "facet": "ideas",
+            "source_idea": "weak-source",
+            "source_artifact": "tools/ideas_tests/test_ideas.py",
+            "check": "./repo.sh ideas report",
+            "lesson": "weak lessons should not become next bets",
+            "follow_up": "keep the current report shape",
+            "reviewed_at": "2026-04-27T12:00:00+00:00",
+          },
+        ]
+      ),
     )
     proc = self.run_ideas("report", "--cost")
     self.assertIn(
@@ -804,6 +818,16 @@ class IdeasCliTest(unittest.TestCase):
     )
     self.assertIn(
       "next_bet_evidence: artifact=tools/ideas.py lesson=operators need one cited run-now bet from repo truth",
+      proc.stdout,
+    )
+    self.assertIn(
+      "next_bet_receipt: target=smooth-execution lesson=lesson_ready_bet "
+      "source_idea=source source_artifact=tools/ideas.py "
+      "expected_check=./repo.sh ideas report --cost",
+      proc.stdout,
+    )
+    self.assertIn(
+      "next_bet_reject: source=lesson_low_signal target=review-loop reason=low_score",
       proc.stdout,
     )
 
@@ -1618,6 +1642,7 @@ class IdeasCliTest(unittest.TestCase):
     # Verify target was archived
     targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     archived_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertEqual(archived_target["status"], "archived")
     self.assertEqual(archived_target["outcome"], "pass")
     self.assertIn("archived_at", archived_target)
     
@@ -1660,6 +1685,7 @@ class IdeasCliTest(unittest.TestCase):
     # Verify target was archived with revisit flag
     targets_rows = [json.loads(line) for line in targets_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     archived_target = [r for r in targets_rows if r["id"] == target_id][0]
+    self.assertEqual(archived_target["status"], "archived")
     self.assertEqual(archived_target["outcome"], "fail")
     self.assertTrue(archived_target.get("to_revisit", False))
     self.assertIn("archived_at", archived_target)

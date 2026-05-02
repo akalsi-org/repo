@@ -28,6 +28,16 @@ WG_UNIT_TEMPLATE = "wg-overlay@.service.in"
 WG_UNIT_INSTALL_PATH = "/etc/systemd/system/wg-overlay@.service"
 
 
+def _int_field(value: object, *, default: int = 0) -> int:
+  if value is None:
+    return default
+  if isinstance(value, int):
+    return value
+  if isinstance(value, str):
+    return int(value)
+  raise ValueError(f"infra: expected int-like field, got {type(value).__name__}")
+
+
 def keypair_paths(cluster_id: int) -> tuple[str, str]:
   """Return (private_key_path, public_key_path) for `cluster_id`.
 
@@ -136,16 +146,16 @@ def render_wg_config(
   lines.append(f"PostUp = wg set %i private-key {priv_path}")
 
   peers_sorted = sorted(
-    (p for p in peer_table if int(p.get("node_id", 0)) != node_id),
-    key=lambda p: (int(p.get("cluster_id", 0)), int(p.get("node_id", 0))),
+    (p for p in peer_table if _int_field(p.get("node_id")) != node_id),
+    key=lambda p: (_int_field(p.get("cluster_id")), _int_field(p.get("node_id"))),
   )
   for peer in peers_sorted:
-    p_cluster = int(peer.get("cluster_id", 0))
+    p_cluster = _int_field(peer.get("cluster_id"))
     if p_cluster != cluster_id:
       raise ValueError(
         f"infra: peer cluster mismatch (self={cluster_id}, peer={p_cluster})"
       )
-    p_node = int(peer.get("node_id", 0))
+    p_node = _int_field(peer.get("node_id"))
     p_pub = str(peer.get("wg_pubkey", "")).strip()
     if not p_pub:
       raise ValueError(f"infra: peer node {p_node} has empty wg_pubkey")

@@ -32,7 +32,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator
+from typing import Any, Callable, Iterator
 
 
 STATE_BASE_REL = ".local/personalities"
@@ -102,7 +102,7 @@ def clear_session_id(repo_root: pathlib.Path, name: str) -> None:
 
 
 def write_session_meta(
-  repo_root: pathlib.Path, name: str, meta: dict
+  repo_root: pathlib.Path, name: str, meta: dict[str, Any]
 ) -> None:
   ensure_state_dir(repo_root, name)
   ordered_keys = (
@@ -128,7 +128,7 @@ def write_session_meta(
   )
 
 
-def read_session_meta(repo_root: pathlib.Path, name: str) -> dict:
+def read_session_meta(repo_root: pathlib.Path, name: str) -> dict[str, Any]:
   from tools.personality_pkg.definitions import parse_yaml_minimal
   path = session_meta_path(repo_root, name)
   if not path.exists():
@@ -141,7 +141,7 @@ def read_session_meta(repo_root: pathlib.Path, name: str) -> dict:
 
 
 def write_last_invocation(
-  repo_root: pathlib.Path, name: str, payload: dict
+  repo_root: pathlib.Path, name: str, payload: dict[str, Any]
 ) -> None:
   ensure_state_dir(repo_root, name)
   last_invocation_path(repo_root, name).write_text(
@@ -157,7 +157,7 @@ def write_last_invocation(
 class LockHandle:
   fd: int
   path: pathlib.Path
-  metadata: dict
+  metadata: dict[str, Any]
 
 
 class LockBusy(RuntimeError):
@@ -168,7 +168,7 @@ class LockTimeout(RuntimeError):
   """Wait mode timed out before acquiring the lock."""
 
 
-def _format_lock_metadata(metadata: dict) -> str:
+def _format_lock_metadata(metadata: dict[str, Any]) -> str:
   ordered_keys = ("pid", "host", "mode", "started_at", "command")
   lines = []
   for key in ordered_keys:
@@ -182,7 +182,7 @@ def _format_lock_metadata(metadata: dict) -> str:
   return "\n".join(lines) + "\n"
 
 
-def parse_lock_metadata(text: str) -> dict:
+def parse_lock_metadata(text: str) -> dict[str, Any]:
   from tools.personality_pkg.definitions import parse_yaml_minimal
   data = parse_yaml_minimal(text)
   return data if isinstance(data, dict) else {}
@@ -208,7 +208,7 @@ def acquire_lock(
   lock_mode: str = "wait",
   timeout: float = 300.0,
   poll_interval: float = 0.1,
-  now_iso=_now_iso,
+  now_iso: Callable[[], str] = _now_iso,
 ) -> Iterator[LockHandle]:
   """Acquire the per-personality lock.
 
@@ -298,7 +298,7 @@ def clear_state(repo_root: pathlib.Path, name: str) -> bool:
 def last_active_iso(repo_root: pathlib.Path, name: str) -> str | None:
   meta = read_session_meta(repo_root, name)
   ts = meta.get("updated_at") or meta.get("created_at")
-  if ts:
+  if isinstance(ts, str) and ts:
     return ts
   tpath = transcript_path(repo_root, name)
   if tpath.exists():

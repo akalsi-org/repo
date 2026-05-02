@@ -45,6 +45,7 @@ set -eu
 script_dir=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd -P)
 toolchain_dir=\$(dirname -- "\$script_dir")
 rootfs="\$toolchain_dir/alpine"
+export PYTHON_JIT="\${PYTHON_JIT:-1}"
 exec "\$rootfs/lib/ld-musl-${loader_arch}.so.1" \\
   --library-path "\$rootfs/lib:\$rootfs/usr/lib" \\
   "\$script_dir/${exe}.real" "\$@"

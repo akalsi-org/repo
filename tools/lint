@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="${REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+cd "$root"
+
+if command -v ruff >/dev/null 2>&1; then
+  ruff format --check .
+  ruff check .
+else
+  python3 -m compileall -q tools
+fi
+
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck $(git ls-files '*.sh')
+else
+  while IFS= read -r file; do
+    bash -n "$file"
+  done < <(git ls-files '*.sh')
+fi
+
+if command -v shfmt >/dev/null 2>&1; then
+  shfmt -d $(git ls-files '*.sh')
+fi

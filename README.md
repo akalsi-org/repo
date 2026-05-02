@@ -32,13 +32,16 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `initialize` | Idempotent post-clone setup: renders LICENSE/README, seeds CONTEXT.md + docs/adr/ + target ledger + starter backlog, runs setup + bootstrap + agent_check. |
 | `setup` | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `agent` | Query and maintain the repository agent knowledge base. |
-| `agent_check` | Validate skill routing, doc references, and Facet-backed command inventory. |
+| `agent_check` | Validate skill routing, repo-truth schemas, doc references, and Facet-backed command inventory. |
 | `pyext-build` | Compile one typed Python module with mypyc into a musl CPython extension under `build/mypyc/$REPO_ARCH/`. |
 | `ideas` | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 | `infra` | Multi-provider VM fabric verb. `adopt` brings an SSH-reachable host onto the inventory with WireGuard probe + tuned sysctls + GH-keys-sync; `status` lists adopted hosts and last-known reachability; `wg-up <ssh_target>` generates the per-cluster WG keypair on the host, renders `/etc/wireguard/wg-c<cluster>.conf` from the local peer table, installs the `wg-overlay@<cluster>.service` unit, and enables it for reboot survival; `wg-peer-add <a> <b>` registers two adopted hosts as peers symmetrically and re-renders both configs; `vxlan-up <ssh_target>` stacks the per-cluster VXLAN overlay on top of WG (one VNI per cluster, head-end-replicated FDB for broadcast, inner MTU 1370 by default), installs the `vxlan-overlay@<cluster>.service` unit, and renders the `/etc/hosts` block; `hosts-render <ssh_target>` re-renders the `/etc/hosts` block from the current peer table without touching VXLAN; `provision-hetzner` creates Hetzner Cloud nodes with CAX ARM64 default; `decommission <provider> <vm_id>` destroys supported provider VMs and removes inventory. `deploy` lands with later issues. See ADR-0014. |
 | `personality` | Multi-CLI persistent personalities. `list` shows the roster + last_active; `init <name> --cli claude\|codex\|copilot` scaffolds a definition; `as-root <name>` opens an interactive persistent session via native CLI resume (or fresh seed); `ask <name> "<prompt>"` runs a one-shot non-interactive call (native resume preferred, transcript replay fallback) and prints only the reply on stdout; `clear <name>` wipes `.local/personalities/<name>/` while preserving the definition. Definitions live under `.agents/personalities/<name>/personality.md`; defaults at `.agents/personalities/_defaults.yaml`. |
+| `lint` | Run repo lint/syntax checks. Uses ruff/shellcheck/shfmt when available; otherwise falls back to Python compile and Bash syntax checks. |
+| `test` | Run unittest discovery and optional coverage threshold checks. |
+| `verify-reproducibility` | Verify bootstrap tool specs carry version and integrity pins. |
 
 `./repo.sh` with no args opens a subshell with `REPO_ROOT`,
 `REPO_LOCAL`, `REPO_TOOLCHAIN`, `REPO_ARCH`, `REPO_SHELL` exported.
@@ -85,6 +88,14 @@ toolchain. Built `.so` modules ship with products; mypyc remains a
 dev/CI tool.
 `bootstrap/tools/librt.sh` source-builds mypyc's native runtime helper
 with the same Zig musl ABI.
+
+## Quality
+
+Quality gates are defined in ADR-0016. Managed hooks are hard gates:
+`pre-commit` runs `agent_check --stale-only` and `lint`; `pre-push`
+runs `agent_check --stale-only`, `lint`, and focused tests. Operators
+may bypass hooks deliberately with Git's native flags; agents must not
+use `--no-verify`. CI runs the same gates on x86_64 and aarch64.
 
 ## Integrations
 

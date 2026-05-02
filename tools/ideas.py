@@ -234,6 +234,11 @@ def _write_scope(row: dict[str, object]) -> list[str]:
   return _list_str(row, "write_scope")
 
 
+def first_check(row: dict[str, object]) -> str:
+  checks = _list_str(row, "checks")
+  return checks[0] if checks else ""
+
+
 def _scope_overlaps(left: str, right: str) -> bool:
   return glob_match(left, right) or glob_match(right, left)
 
@@ -736,17 +741,22 @@ def learning_next_bet_candidate(
     learning_rows: list[dict[str, object]],
 ) -> dict[str, object] | None:
   candidates: list[tuple[int, str, dict[str, object]]] = []
+  rejects: list[str] = []
   for row in learning_rows:
+    row_id = str(row.get("id") or "<unknown>")
     follow_up = _learning_follow_up_text(row)
     reviewed_at = row.get("reviewed_at")
     if not isinstance(reviewed_at, str) or not reviewed_at:
+      rejects.append(f"{row_id}:missing_reviewed_at")
       continue
     score = next_bet_follow_up_score_text(follow_up)
     if score <= 1:
+      rejects.append(f"{row_id}:low_score")
       continue
     try:
       reviewed_time = datetime.fromisoformat(reviewed_at)
     except ValueError:
+      rejects.append(f"{row_id}:invalid_reviewed_at")
       continue
     if _follow_up_already_addressed_text(
         follow_up,
@@ -754,6 +764,7 @@ def learning_next_bet_candidate(
         source_id=row.get("source_idea"),
         rows=rows,
     ):
+      rejects.append(f"{row_id}:already_addressed")
       continue
     candidates.append((score, reviewed_at, row))
   if not candidates:
@@ -762,8 +773,13 @@ def learning_next_bet_candidate(
     candidates,
     key=lambda item: (item[0], item[1], str(item[2].get("id"))),
   )
+  selected_id = str(row.get("id"))
+  for candidate_score, _, candidate_row in candidates:
+    candidate_id = str(candidate_row.get("id"))
+    if candidate_id != selected_id:
+      rejects.append(f"{candidate_id}:lower_score:{candidate_score}")
   return {
-    "source_id": str(row.get("id")),
+    "source_id": selected_id,
     "source_target": str(row.get("target_id")),
     "owner": str(row.get("facet")),
     "score": score,
@@ -772,6 +788,8 @@ def learning_next_bet_candidate(
     "check": str(row.get("check") or ""),
     "lesson": str(row.get("lesson") or ""),
     "source_artifact": str(row.get("source_artifact") or ""),
+    "source_idea": str(row.get("source_idea") or ""),
+    "reject_reasons": rejects,
   }
 
 
@@ -818,6 +836,8 @@ def next_bet_candidate(
     candidates,
     key=lambda item: (item[0], item[1], str(item[2].get("id"))),
   )
+  outcome_review = row.get("outcome_review")
+  lesson = outcome_review.get("actual", "") if isinstance(outcome_review, dict) else ""
   return {
     "source_id": str(row.get("id")),
     "source_target": str(row.get("target")),
@@ -825,6 +845,11 @@ def next_bet_candidate(
     "score": score,
     "reviewed_at": reviewed_at.isoformat(),
     "action": _follow_up_text(row) or "",
+    "source_idea": str(row.get("id")),
+    "source_artifact": str(row.get("source_artifact") or ""),
+    "check": str(row.get("source_check") or first_check(row) or ""),
+    "lesson": str(lesson),
+    "reject_reasons": [],
   }
 
 
@@ -1274,8 +1299,8 @@ def cmd_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
   target_id = args.target
   
   # Find target
-  target_row = None
-  target_idx = None
+  target_row: dict[str, object] | None = None
+  target_idx: int | None = None
   for idx, row in enumerate(target_rows):
     if row.get("id") == target_id:
       target_row = row
@@ -1284,6 +1309,8 @@ def cmd_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
   
   if not target_row:
     raise SystemExit(f"target `{target_id}` not found")
+  if target_idx is None:
+    raise SystemExit(f"target `{target_id}` index not found")
   
   if target_row.get("status") != "active":
     raise SystemExit(f"target `{target_id}` is not active (status={target_row.get('status')})")
@@ -1307,7 +1334,8 @@ def cmd_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
   
   # Calculate review date
   check = target_row.get("check", "")
-  review_cadence = target_row.get("review_cadence", "weekly")
+  review_cadence_raw = target_row.get("review_cadence", "weekly")
+  review_cadence = review_cadence_raw if isinstance(review_cadence_raw, str) else "weekly"
   interval = CADENCE_INTERVALS.get(review_cadence, timedelta(days=7))
   review_date = (datetime.now(timezone.utc) + interval).strftime("%Y-%m-%d")
   
@@ -1327,8 +1355,8 @@ def cmd_archive(root: pathlib.Path, args: argparse.Namespace) -> int:
     raise SystemExit(f"outcome must be 'pass' or 'fail', got '{outcome}'")
   
   # Find target
-  target_row = None
-  target_idx = None
+  target_row: dict[str, object] | None = None
+  target_idx: int | None = None
   for idx, row in enumerate(target_rows):
     if row.get("id") == target_id:
       target_row = row
@@ -1337,6 +1365,8 @@ def cmd_archive(root: pathlib.Path, args: argparse.Namespace) -> int:
   
   if not target_row:
     raise SystemExit(f"target `{target_id}` not found")
+  if target_idx is None:
+    raise SystemExit(f"target `{target_id}` index not found")
   
   if target_row.get("status") != "active":
     raise SystemExit(f"target `{target_id}` is not active (status={target_row.get('status')})")
@@ -1350,6 +1380,7 @@ def cmd_archive(root: pathlib.Path, args: argparse.Namespace) -> int:
   target_row["archived_at"] = now
   target_row["outcome"] = outcome
   target_row["archived_by"] = user_email
+  target_row["status"] = "archived"
   target_rows[target_idx] = target_row
   
   # If outcome is fail, mark for revisit
@@ -1506,7 +1537,8 @@ def cmd_score(root: pathlib.Path, args: argparse.Namespace) -> int:
   write_rows(root, rows)
   output = f"scored {args.id}"
   if hasattr(args, 'cost_estimate') and args.cost_estimate is not None:
-    can_activate, msg = check_facet_budget(root, rows, row.get("owner"), args.cost_estimate)
+    owner = row.get("owner")
+    can_activate, msg = check_facet_budget(root, rows, owner if isinstance(owner, str) else "", args.cost_estimate)
     if not can_activate:
       print(f"{output} with WARNING: {msg}")
     else:
@@ -1863,7 +1895,7 @@ def cmd_batch_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
       raise SystemExit(f"target `{target_id}` not found in ledger")
     
     target_row = None
-    target_idx = None
+    target_idx: int | None = None
     for idx, row in enumerate(target_rows):
       if row.get("id") == target_id:
         target_row = row
@@ -1872,6 +1904,8 @@ def cmd_batch_activate(root: pathlib.Path, args: argparse.Namespace) -> int:
     
     if target_row is None:
       raise SystemExit(f"target `{target_id}` not found in targets.jsonl")
+    if target_idx is None:
+      raise SystemExit(f"target `{target_id}` index not found")
     
     if target_row.get("status") != "active":
       raise SystemExit(f"target `{target_id}` status={target_row.get('status')}, need 'active'")
@@ -1992,6 +2026,30 @@ def cmd_report(root: pathlib.Path, args: argparse.Namespace) -> int:
         "  next_bet_evidence: "
         f"artifact={candidate.get('source_artifact', '')} "
         f"lesson={candidate['lesson']}"
+      )
+    reject_reasons_raw = candidate.get("reject_reasons", [])
+    reject_reasons = [
+      reason for reason in reject_reasons_raw if isinstance(reason, str)
+    ] if isinstance(reject_reasons_raw, list) else []
+    print(
+      "  next_bet_receipt: "
+      f"target={candidate['source_target']} "
+      f"lesson={candidate['source_id']} "
+      f"source_idea={candidate.get('source_idea', '')} "
+      f"source_artifact={candidate.get('source_artifact', '')} "
+      f"expected_check={candidate.get('check', '')} "
+      f"reject_reasons={','.join(reject_reasons) or 'none'}"
+    )
+    for reason in reject_reasons:
+      source, _, reject_reason = reason.partition(":")
+      reject_target = ""
+      for learning_row in learning_rows:
+        if learning_row.get("id") == source:
+          reject_target = str(learning_row.get("target_id") or "")
+          break
+      print(
+        "  next_bet_reject: "
+        f"source={source} target={reject_target} reason={reject_reason}"
       )
   print("evidence_lineage:")
   lineage_count = 0

@@ -1,0 +1,32 @@
+[tool.repo_quality]
+coverage_min = 85
+coverage_omit = [
+  "tools/bootstrap_artifact_release.py",
+  "tools/dep_shape.py",
+  "tools/infra_pkg/adopt.py",
+  "tools/infra_pkg/dispatch.py",
+  "tools/infra_pkg/status.py",
+  "tools/initialize",
+  "tools/system_test",
+  "tools/test",
+  "tools/test_base.py",
+]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "S", "N", "C4", "SIM", "PERF", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

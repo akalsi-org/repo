@@ -18,11 +18,16 @@ import os
 import pathlib
 import sys
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Callable, Protocol, TextIO, Sequence
 
 from tools.personality_pkg import (
   claude_adapter, codex_adapter, copilot_adapter, definitions, runner, state,
 )
+
+
+class InvocationLike(Protocol):
+  argv: list[str]
+  used_native_resume: bool
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,7 +55,7 @@ def build_invocation(
   session_id: str | None,
   repo_root: pathlib.Path,
   initial_prompt: str | None,
-):
+) -> InvocationLike:
   if cfg.cli == "claude":
     return claude_adapter.as_root_argv(
       cfg, session_id=session_id, initial_prompt=initial_prompt,
@@ -71,9 +76,10 @@ def run(
   args: argparse.Namespace,
   *,
   repo_root: pathlib.Path,
-  exec_fn=None,
-  out=sys.stdout, err=sys.stderr,
-  now_iso=_now_iso,
+  exec_fn: runner.Runner | None = None,
+  out: TextIO = sys.stdout,
+  err: TextIO = sys.stderr,
+  now_iso: Callable[[], str] = _now_iso,
 ) -> int:
   exec_fn = exec_fn or runner.exec_runner
   try:
@@ -154,6 +160,6 @@ def run(
 
 
 def main(argv: Sequence[str] | None, *, repo_root: pathlib.Path,
-         exec_fn=None) -> int:
+         exec_fn: runner.Runner | None = None) -> int:
   args = build_parser().parse_args(list(argv) if argv is not None else None)
   return run(args, repo_root=repo_root, exec_fn=exec_fn)

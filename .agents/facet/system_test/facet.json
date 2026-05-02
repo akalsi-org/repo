@@ -23,6 +23,7 @@
   "commands": [
     {
       "name": "system_test",
+      "adr": "docs/adr/0009_cluster_first_system_tests.md",
       "purpose": "Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest."
     }
   ],

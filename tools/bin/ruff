@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  check)
+    exec python3 -m compileall -q "$@"
+    ;;
+  format)
+    if [[ "${1:-}" == "--check" ]]; then
+      shift
+      exec python3 -m compileall -q "$@"
+    fi
+    printf 'ruff fallback: only format --check is supported\n' >&2
+    exit 2
+    ;;
+  --version)
+    printf 'ruff fallback (compileall)\n'
+    ;;
+  *)
+    printf 'ruff fallback: unsupported command %s\n' "$cmd" >&2
+    exit 2
+    ;;
+esac

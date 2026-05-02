@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-from typing import Sequence
+from typing import TextIO, Sequence
 
 from tools.personality_pkg import definitions, state
 
@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, *, repo_root: pathlib.Path,
-        out=sys.stdout, err=sys.stderr) -> int:
+        out: TextIO = sys.stdout, err: TextIO = sys.stderr) -> int:
   # Validate the personality exists (so we don't silently `clear` a typo).
   try:
     definitions.load_personality(repo_root, args.name)

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# repo-managed-hook
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+"$root/repo.sh" agent_check --stale-only
+"$root/repo.sh" lint
+"$root/repo.sh" mypy --strict tools/infra_pkg tools/personality_pkg tools/agent_check.py tools/ideas.py
+"$root/repo.sh" test --coverage --min=85
+"$root/repo.sh" verify-reproducibility
+"$root/repo.sh" python3 tools/dep_shape.py

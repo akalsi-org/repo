@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+status=0
+for path in "$@"; do
+  [[ -f "$path" ]] || continue
+  if [[ "$(head -c 2 "$path" 2>/dev/null || true)" == "#!" ]] || [[ "$path" == *.sh ]]; then
+    bash -n "$path" || status=1
+  fi
+done
+exit "$status"

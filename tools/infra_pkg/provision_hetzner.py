@@ -13,13 +13,14 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Callable, Sequence
+from typing import Any, Callable, Sequence
 
 from tools.infra_pkg import gh, identity, inventory, tuning, units_render, wg
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 InputFn = Callable[[str], str]
+Config = dict[str, Any]
 
 
 def _ok(msg: str) -> None:
@@ -119,8 +120,8 @@ def collect_config(
   repo_root: pathlib.Path,
   input_fn: InputFn = input,
   runner: Runner = subprocess.run,
-  url_opener=None,
-) -> dict:
+  url_opener: Any = None,
+) -> Config:
   arch = args.arch or _prompt_default("arch", "arm64", input_fn=input_fn)
   if arch not in {"arm64", "amd64"}:
     raise SystemExit("infra: arch must be arm64 or amd64")
@@ -191,7 +192,7 @@ def _yaml_cmd(cmd: str) -> str:
   return f"  - [ bash, -lc, {json.dumps(cmd)} ]"
 
 
-def render_cloud_init(config: dict) -> str:
+def render_cloud_init(config: Config) -> str:
   cluster_id = int(config["cluster_id"])
   seeds = "\n".join(config.get("seeds") or []) + ("\n" if config.get("seeds") else "")
   sysctls = tuning.render_sysctl_dropin()
@@ -247,7 +248,7 @@ def render_cloud_init(config: dict) -> str:
 
 def create_vm(
   repo_root: pathlib.Path,
-  config: dict,
+  config: Config,
   user_data: str,
   *,
   runner: Runner = subprocess.run,
@@ -304,12 +305,12 @@ def wait_for_ssh_and_pubkey(
 
 def record_inventory(
   repo_root: pathlib.Path,
-  config: dict,
+  config: Config,
   *,
   vm_id: str,
   ipv4: str,
   wg_pubkey: str,
-) -> dict:
+) -> Config:
   host = {
     "provider_label": "hetzner",
     "ssh_target": f"root@{ipv4}",
@@ -338,7 +339,7 @@ def run(
   repo_root: pathlib.Path,
   input_fn: InputFn = input,
   runner: Runner = subprocess.run,
-  url_opener=None,
+  url_opener: Any = None,
   sleep_fn: Callable[[float], None] = time.sleep,
 ) -> int:
   config = collect_config(

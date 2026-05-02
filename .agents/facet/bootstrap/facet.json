@@ -37,6 +37,7 @@
   "commands": [
     {
       "name": "source_mirror",
+      "adr": "docs/adr/0006_cache_hygiene_principles.md",
       "purpose": "List or upload configured byte-identical upstream source mirrors."
     }
   ],

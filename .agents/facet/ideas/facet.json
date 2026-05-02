@@ -28,6 +28,7 @@
   "commands": [
     {
       "name": "ideas",
+      "adr": "docs/adr/0016_quality_bar.md",
       "purpose": "Manage idea inventory, scoring, readiness gates, and stale idea reports."
     }
   ],

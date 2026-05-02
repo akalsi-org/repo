@@ -26,6 +26,8 @@ class Consideration:
 class Command:
   name: str
   purpose: str
+  adr: str | None = None
+  no_adr: str | None = None
 
 
 @dataclass(frozen=True)
@@ -178,10 +180,12 @@ def _load_commands(
   for entry in _object_list(raw, field="commands", source=source):
     _ensure_allowed_keys(
       entry,
-      allowed={"name", "purpose"},
+      allowed={"name", "purpose", "adr", "no_adr"},
       source=source,
       field="commands",
     )
+    adr = entry.get("adr")
+    no_adr = entry.get("no_adr")
     commands.append(
       Command(
         name=_require_non_empty_str(
@@ -194,6 +198,8 @@ def _load_commands(
           field="commands.purpose",
           source=source,
         ),
+        adr=adr if isinstance(adr, str) else None,
+        no_adr=no_adr if isinstance(no_adr, str) else None,
       )
     )
   return tuple(commands)
@@ -561,4 +567,3 @@ def facet_spend_budgets(root: pathlib.Path) -> dict[str, FacetSpendBudget]:
     )
   
   return budgets
-

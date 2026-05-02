@@ -5,7 +5,7 @@ import argparse
 import json
 import pathlib
 import sys
-from typing import Sequence
+from typing import Any, TextIO, Sequence
 
 from tools.personality_pkg import definitions, state
 
@@ -18,9 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
   return p
 
 
-def collect_rows(repo_root: pathlib.Path) -> list[dict]:
+def collect_rows(repo_root: pathlib.Path) -> list[dict[str, Any]]:
   defaults = definitions.load_defaults(repo_root)
-  rows: list[dict] = []
+  rows: list[dict[str, Any]] = []
   for name in definitions.list_personalities(repo_root):
     p = definitions.load_personality(repo_root, name)
     cfg = definitions.resolve_effective(defaults, p)
@@ -40,7 +40,7 @@ def collect_rows(repo_root: pathlib.Path) -> list[dict]:
 
 
 def run(args: argparse.Namespace, *, repo_root: pathlib.Path,
-        out=sys.stdout) -> int:
+        out: TextIO = sys.stdout) -> int:
   rows = collect_rows(repo_root)
   if args.json:
     out.write(json.dumps(rows, indent=2) + "\n")

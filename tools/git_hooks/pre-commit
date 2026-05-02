@@ -3,4 +3,6 @@
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
-exec "$root/repo.sh" agent_check --stale-only
+"$root/repo.sh" agent_check --stale-only
+"$root/repo.sh" lint
+"$root/repo.sh" mypy --strict tools/agent_check.py tools/ideas.py

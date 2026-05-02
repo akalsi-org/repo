@@ -5,7 +5,7 @@ import argparse
 import pathlib
 import re
 import sys
-from typing import Sequence
+from typing import TextIO, Sequence
 
 from tools.personality_pkg import definitions
 
@@ -60,7 +60,7 @@ concrete GitHub identifiers.
 """
 
 
-def _yaml_scalar(value) -> str:
+def _yaml_scalar(value: object) -> str:
   if value is None:
     return "null"
   if isinstance(value, str):
@@ -69,7 +69,7 @@ def _yaml_scalar(value) -> str:
 
 
 def run(args: argparse.Namespace, *, repo_root: pathlib.Path,
-        out=sys.stdout, err=sys.stderr) -> int:
+        out: TextIO = sys.stdout, err: TextIO = sys.stderr) -> int:
   if not definitions.SLUG_RE.match(args.name):
     err.write(f"personality init: name {args.name!r} is not a valid slug\n")
     return 2

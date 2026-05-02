@@ -7,13 +7,14 @@ from __future__ import annotations
 import json
 import pathlib
 from dataclasses import dataclass
-from typing import Iterator, Mapping
+from typing import Iterator, Mapping, TypeVar, overload
 
 from tools.facets import facet_keys
 
 
 TARGETS_REL = ".agents/targets/targets.jsonl"
 TARGET_STATUSES = ("active", "archived")
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,8 +117,17 @@ class TargetLedger(Mapping[str, TargetRecord]):
   def __len__(self) -> int:
     return len(self._by_id)
 
-  def get(self, target_id: str) -> TargetRecord | None:
-    return self._by_id.get(target_id)
+  @overload
+  def get(self, key: str, /) -> TargetRecord | None: ...
+
+  @overload
+  def get(self, key: str, default: TargetRecord, /) -> TargetRecord: ...
+
+  @overload
+  def get(self, key: str, default: _T, /) -> TargetRecord | _T: ...
+
+  def get(self, key: str, default: object = None, /) -> object:
+    return self._by_id.get(key, default)
 
   def require(
       self,

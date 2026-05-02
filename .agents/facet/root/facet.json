@@ -17,6 +17,7 @@
   "commands": [
     {
       "name": "initialize",
+      "no_adr": "Template bootstrap entrypoint documented by README/AGENTS; no separate ADR needed yet.",
       "purpose": "Idempotent post-clone setup: render product files, run setup/bootstrap/checks, and stamp completion."
     }
   ],

@@ -9,7 +9,7 @@ import argparse
 import pathlib
 import shlex
 import sys
-from typing import Sequence
+from typing import Any, Sequence
 
 from tools.infra_pkg import gh, identity, inventory, lscpu, ssh, tuning, units_render
 
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
   return p
 
 
-def _wireguard_probe(target: str, sudo_word: str, runner) -> None:
+def _wireguard_probe(target: str, sudo_word: str, runner: ssh.Runner) -> None:
   res = ssh.ssh_run(target, "modprobe wireguard", sudo=(sudo_word == "sudo"), runner=runner)
   if res.rc != 0:
     raise SystemExit(
@@ -69,7 +69,12 @@ def _wireguard_probe(target: str, sudo_word: str, runner) -> None:
     )
 
 
-def _apply_smt(target: str, sudo_word: str, runner, smt_disable_opt_in: bool) -> dict:
+def _apply_smt(
+  target: str,
+  sudo_word: str,
+  runner: ssh.Runner,
+  smt_disable_opt_in: bool,
+) -> dict[str, Any]:
   res = ssh.ssh_run(target, "lscpu", runner=runner)
   if res.rc != 0:
     raise SystemExit(f"infra: lscpu failed on {target}: {res.stderr.strip() or res.rc}")
@@ -95,7 +100,7 @@ def _apply_smt(target: str, sudo_word: str, runner, smt_disable_opt_in: bool) ->
   return decision
 
 
-def _apply_sysctls(target: str, sudo_word: str, runner) -> None:
+def _apply_sysctls(target: str, sudo_word: str, runner: ssh.Runner) -> None:
   payload = tuning.render_sysctl_dropin()
   res = ssh.scp_write(target, tuning.SYSCTL_DROPIN_PATH, payload, sudo=(sudo_word == "sudo"), runner=runner)
   if res.rc != 0:
@@ -105,7 +110,7 @@ def _apply_sysctls(target: str, sudo_word: str, runner) -> None:
     raise SystemExit(f"infra: sysctl --system failed: {reload_res.stderr.strip() or reload_res.rc}")
 
 
-def _apply_tuned(target: str, sudo_word: str, runner) -> None:
+def _apply_tuned(target: str, sudo_word: str, runner: ssh.Runner) -> None:
   has_tuned = ssh.ssh_run(target, "command -v tuned-adm >/dev/null", runner=runner)
   if has_tuned.rc == 0:
     res = ssh.ssh_run(
@@ -127,7 +132,7 @@ def _apply_tuned(target: str, sudo_word: str, runner) -> None:
 
 
 def _install_authorized_keys(
-  target: str, sudo_word: str, runner,
+  target: str, sudo_word: str, runner: ssh.Runner,
   login: str | None, local_keys_path: str | None,
 ) -> None:
   if local_keys_path is not None:
@@ -158,7 +163,7 @@ def _install_authorized_keys(
 
 
 def _install_keys_sync_units(
-  target: str, sudo_word: str, runner,
+  target: str, sudo_word: str, runner: ssh.Runner,
   login: str, interval: str,
 ) -> None:
   service = units_render.render("gh-keys-sync.service.in", login)
@@ -182,7 +187,7 @@ def _install_keys_sync_units(
     raise SystemExit(f"infra: timer enable failed: {enable.stderr.strip() or enable.rc}")
 
 
-def _detect_arch(target: str, runner) -> str:
+def _detect_arch(target: str, runner: ssh.Runner) -> str:
   res = ssh.ssh_run(target, "uname -m", runner=runner)
   if res.rc != 0 or not res.stdout.strip():
     return "unknown"
@@ -194,7 +199,7 @@ def run(
   *,
   repo_root: pathlib.Path,
   runner: ssh.Runner | None = None,
-  url_opener=None,
+  url_opener: Any = None,
 ) -> int:
   runner = runner or ssh._default_runner
   identity.validate_cluster_id(args.cluster_id)

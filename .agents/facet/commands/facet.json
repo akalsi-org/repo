@@ -6,11 +6,20 @@
     "tools/agent_check",
     "tools/agent_check.py",
     "tools/agent_check_tests/**",
+    "schemas/**",
     "tools/facets.py",
     "tools/pyext-build",
     "tools/pyext_build_env.sh",
     "tests/fixtures/pyext_smoke/**",
     "tools/bin/**",
+    "tools/lint",
+    "tools/test",
+    "tools/test_base.py",
+    "tools/test_tests/**",
+    "tools/verify-reproducibility",
+    "tools/verify_reproducibility_tests/**",
+    "tools/dep_shape.py",
+    "tools/dep_shape_tests/**",
     ".agents/facet/commands/**"
   ],
   "consider": [
@@ -27,11 +36,28 @@
   "commands": [
     {
       "name": "agent_check",
+      "adr": "docs/adr/0016_quality_bar.md",
       "purpose": "Validate skill routing, doc references, and Facet-backed command inventory."
     },
     {
       "name": "pyext-build",
+      "adr": "docs/adr/0008_pinned_binary_python.md",
       "purpose": "Compile one typed Python module with mypyc into a musl CPython extension under build/mypyc/$REPO_ARCH/."
+    },
+    {
+      "name": "lint",
+      "adr": "docs/adr/0016_quality_bar.md",
+      "purpose": "Run repo quality lint checks, using pinned tools when available and stdlib fallbacks for syntax checks."
+    },
+    {
+      "name": "test",
+      "adr": "docs/adr/0016_quality_bar.md",
+      "purpose": "Run unittest discovery and optional coverage threshold checks."
+    },
+    {
+      "name": "verify-reproducibility",
+      "adr": "docs/adr/0016_quality_bar.md",
+      "purpose": "Verify bootstrap specs carry version and integrity pins."
     }
   ],
   "checks": [

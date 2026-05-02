@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 from tools.infra_pkg import inventory, ssh, units_render, wg
+
+Host = dict[str, Any]
 
 
 def _err(msg: str) -> None:
@@ -28,23 +30,23 @@ def _ok(msg: str) -> None:
 # --- shared helpers ---------------------------------------------------
 
 
-def _find_host(data: dict, *, ssh_target: str) -> dict:
+def _find_host(data: dict[str, Any], *, ssh_target: str) -> Host:
   for h in data.get("hosts", []):
-    if h.get("ssh_target") == ssh_target:
-      return h
+    if isinstance(h, dict) and h.get("ssh_target") == ssh_target:
+      return cast(Host, h)
   raise SystemExit(
     f"infra: no adopted host with ssh_target {ssh_target!r}; run infra adopt first"
   )
 
 
-def _peers_for_cluster(data: dict, cluster_id: int) -> list[dict]:
+def _peers_for_cluster(data: dict[str, Any], cluster_id: int) -> list[Host]:
   return [
     h for h in data.get("hosts", [])
     if int(h.get("cluster_id", 0)) == cluster_id
   ]
 
 
-def _peer_table_from_host(host: dict) -> list[dict]:
+def _peer_table_from_host(host: Host) -> list[Host]:
   """Return host['peers'] as a list of dicts; default to []."""
   raw = host.get("peers")
   if raw is None:
@@ -56,7 +58,7 @@ def _peer_table_from_host(host: dict) -> list[dict]:
   return [p for p in raw if isinstance(p, dict)]
 
 
-def _ensure_wg_fields(host: dict) -> None:
+def _ensure_wg_fields(host: Host) -> None:
   """Schema migration: existing host records get WG fields populated lazily."""
   host.setdefault("wg_pubkey", "")
   host.setdefault("wg_underlay_endpoint", "")
@@ -65,7 +67,7 @@ def _ensure_wg_fields(host: dict) -> None:
 
 
 def _install_wg_unit(
-  ssh_target: str, sudo_word: str, runner, cluster_id: int,
+  ssh_target: str, sudo_word: str, runner: ssh.Runner, cluster_id: int,
 ) -> None:
   """Render and install the wg-overlay@.service template; daemon-reload."""
   body = units_render.render_template(
@@ -90,7 +92,7 @@ def _install_wg_unit(
 
 
 def _enable_and_restart_wg(
-  ssh_target: str, sudo_word: str, runner, cluster_id: int,
+  ssh_target: str, sudo_word: str, runner: ssh.Runner, cluster_id: int,
 ) -> None:
   unit = f"wg-overlay@{cluster_id}.service"
   cmd = (
@@ -227,7 +229,7 @@ def _wg_peer_add_parser() -> argparse.ArgumentParser:
   return p
 
 
-def _peer_record_for(host: dict) -> dict:
+def _peer_record_for(host: Host) -> Host:
   return {
     "cluster_id": int(host["cluster_id"]),
     "node_id": int(host["node_id"]),
@@ -236,7 +238,7 @@ def _peer_record_for(host: dict) -> dict:
   }
 
 
-def _add_peer_symmetrically(host: dict, peer: dict) -> bool:
+def _add_peer_symmetrically(host: Host, peer: Host) -> bool:
   """Insert/replace `peer` in host['peers']. Returns True if changed."""
   peers = list(_peer_table_from_host(host))
   key = (int(peer["cluster_id"]), int(peer["node_id"]))
@@ -255,7 +257,7 @@ def _add_peer_symmetrically(host: dict, peer: dict) -> bool:
 
 
 def _re_render_and_restart(
-  host: dict, *, runner: ssh.Runner,
+  host: Host, *, runner: ssh.Runner,
 ) -> None:
   cluster_id = int(host["cluster_id"])
   node_id = int(host["node_id"])
@@ -266,7 +268,7 @@ def _re_render_and_restart(
     peer_table=_peer_table_from_host(host),
     listen_port=listen_port,
   )
-  ssh_target = host["ssh_target"]
+  ssh_target = str(host["ssh_target"])
   sudo_word = ssh.probe_root_or_sudo(ssh_target, runner=runner)
   wg.apply_wg_config(
     ssh_target, cluster_id, config,

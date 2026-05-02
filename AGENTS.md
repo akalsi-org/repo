@@ -211,13 +211,24 @@ remain isolated by worktree.
 |---------|------|---------|
 | `initialize` | Python | Idempotent post-clone setup: render LICENSE/README, seed CONTEXT.md + docs/adr/ + target ledger + starter backlog, run setup + bootstrap + agent_check, stamp completion. |
 | `agent` | Python | Query and maintain the repository agent knowledge base. |
-| `agent_check` | Python | Validate skill routing, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
+| `agent_check` | Python | Validate skill routing, repo-truth schemas, doc references, and Facet-backed command inventory. Rejects `_` in skill folder names. |
 | `ideas` | Python | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 | `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later), vxlan-up (stack VXLAN overlay on top of WG: one VNI per cluster, head-end-replicated FDB for broadcast, inner overlay 10.<cluster>.<node_high>.<node_low>/16, default inner MTU 1370, install + enable vxlan-overlay@cluster systemd unit, render /etc/hosts block bracketed by BEGIN/END markers), hosts-render (re-render the /etc/hosts block from the current peer table without touching VXLAN), provision-hetzner (API-created Hetzner Cloud node with CAX ARM64 default + cloud-init fabric bootstrap), and decommission (destroy supported provider VM + remove inventory). deploy lands with later issues. |
 | `personality` | Python | Multi-CLI persistent personalities verb (issue #14, spec docs/research/multi_cli_personality_skill_spec.md). Subcommands list (roster + last_active), init <name> --cli claude/codex/copilot (scaffold a definition), as-root <name> (interactive persistent session via native CLI resume or fresh seed; lock fail-fast), ask <name> "<prompt>" (one-shot non-interactive; native resume preferred, transcript replay fallback; stdout = reply only; lock waits by default), and clear <name> (wipe `.local/personalities/<name>/`; definition preserved). Definitions at `.agents/personalities/<name>/personality.md`; defaults at `.agents/personalities/_defaults.yaml`. Per-CLI defaults: claude claude-sonnet-4-6, codex gpt-5.5 low, copilot gpt-5.4. Cross-CLI delegation: personality ask <name> "<prompt>" works as a Bash command inside any CLI whose tool/shell allowlist permits it. |
+| `lint` | Bash | Run repo quality lint checks. Uses ruff/shellcheck/shfmt when available; otherwise falls back to Python compile and Bash syntax checks. |
+| `test` | Python | Run unittest discovery and optional coverage threshold checks. |
+| `verify-reproducibility` | Python | Verify bootstrap tool specs carry version and integrity pins. |
+
+### Quality hooks
+
+ADR-0016 defines the quality gate stack. Managed hooks are hard gates:
+pre-commit runs `agent_check --stale-only` and `lint`; pre-push
+runs `agent_check --stale-only`, `lint`, and focused tests. Operators
+may use Git's native bypass flags deliberately. Agents must never use
+`--no-verify`.
 
 ## 6. Naming
 

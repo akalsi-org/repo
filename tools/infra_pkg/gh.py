@@ -15,6 +15,7 @@ import os
 import pathlib
 import urllib.error
 import urllib.request
+from typing import Any
 
 
 GITHUB_API_USER_URL = "https://api.github.com/user"
@@ -53,7 +54,7 @@ def discover_login(
   *,
   override: str | None = None,
   home: pathlib.Path | None = None,
-  opener=urllib.request.urlopen,
+  opener: Any = urllib.request.urlopen,
 ) -> str:
   """Return the GitHub login to use for keys-sync.
 

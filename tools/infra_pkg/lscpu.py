@@ -5,6 +5,8 @@ Pure parsing of `lscpu` text. No subprocess. The adopt flow runs
 """
 from __future__ import annotations
 
+from typing import Any
+
 
 def threads_per_core(lscpu_out: str) -> int | None:
   """Return Thread(s) per core from lscpu output, or None if missing.
@@ -30,7 +32,7 @@ def threads_per_core(lscpu_out: str) -> int | None:
   return None
 
 
-def smt_decision(lscpu_out: str, smt_disable_opt_in: bool) -> dict:
+def smt_decision(lscpu_out: str, smt_disable_opt_in: bool) -> dict[str, Any]:
   """Return a small decision record describing whether to apply nosmt.
 
   Output shape:

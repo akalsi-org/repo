@@ -34,6 +34,16 @@ VXLAN_UNIT_INSTALL_PATH = "/etc/systemd/system/vxlan-overlay@.service"
 ETC_HOSTS_PATH = "/etc/hosts"
 
 
+def _int_field(value: object, *, default: int = 0) -> int:
+  if value is None:
+    return default
+  if isinstance(value, int):
+    return value
+  if isinstance(value, str):
+    return int(value)
+  raise ValueError(f"infra: expected int-like field, got {type(value).__name__}")
+
+
 def interface_name(cluster_id: int) -> str:
   """Return the VXLAN interface name for `cluster_id`."""
   identity.validate_cluster_id(cluster_id)
@@ -114,16 +124,16 @@ def render_fdb_appends(
   iface = interface_name(cluster_id)
   out: list[list[str]] = []
   peers_sorted = sorted(
-    (p for p in peer_table if int(p.get("node_id", 0)) != self_node_id),
-    key=lambda p: (int(p.get("cluster_id", 0)), int(p.get("node_id", 0))),
+    (p for p in peer_table if _int_field(p.get("node_id")) != self_node_id),
+    key=lambda p: (_int_field(p.get("cluster_id")), _int_field(p.get("node_id"))),
   )
   for peer in peers_sorted:
-    p_cluster = int(peer.get("cluster_id", 0))
+    p_cluster = _int_field(peer.get("cluster_id"))
     if p_cluster != cluster_id:
       raise ValueError(
         f"infra: peer cluster mismatch (self={cluster_id}, peer={p_cluster})"
       )
-    p_node = int(peer.get("node_id", 0))
+    p_node = _int_field(peer.get("node_id"))
     p_under = identity.underlay_ipv4(p_cluster, p_node)
     out.append([
       "bridge", "fdb", "append", BROADCAST_MAC,
@@ -148,12 +158,12 @@ def render_etc_hosts_block(
   begin = hosts_begin_marker(cluster_id)
   end = hosts_end_marker(cluster_id)
   entries = sorted(
-    (p for p in peer_table if int(p.get("cluster_id", 0)) == cluster_id),
-    key=lambda p: int(p.get("node_id", 0)),
+    (p for p in peer_table if _int_field(p.get("cluster_id")) == cluster_id),
+    key=lambda p: _int_field(p.get("node_id")),
   )
   lines: list[str] = [begin]
   for peer in entries:
-    p_node = int(peer.get("node_id", 0))
+    p_node = _int_field(peer.get("node_id"))
     identity.validate_node_id(p_node)
     addr = identity.overlay_ipv4(cluster_id, p_node)
     host = identity.hostname(cluster_id, p_node)

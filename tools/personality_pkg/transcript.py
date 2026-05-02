@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import pathlib
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Callable
 
 from tools.personality_pkg import state
 
@@ -31,8 +31,12 @@ def _now_iso() -> str:
 
 
 def append_entry(
-  repo_root: pathlib.Path, name: str, entry: dict, *, now_iso=_now_iso
-) -> dict:
+  repo_root: pathlib.Path,
+  name: str,
+  entry: dict[str, Any],
+  *,
+  now_iso: Callable[[], str] = _now_iso,
+) -> dict[str, Any]:
   if entry.get("kind") not in ALLOWED_KINDS:
     raise ValueError(f"transcript: unknown kind {entry.get('kind')!r}")
   out = dict(entry)
@@ -45,11 +49,11 @@ def append_entry(
   return out
 
 
-def read_entries(repo_root: pathlib.Path, name: str) -> list[dict]:
+def read_entries(repo_root: pathlib.Path, name: str) -> list[dict[str, Any]]:
   path = state.transcript_path(repo_root, name)
   if not path.exists():
     return []
-  out: list[dict] = []
+  out: list[dict[str, Any]] = []
   with path.open("r", encoding="utf-8") as fh:
     for lineno, line in enumerate(fh, 1):
       line = line.rstrip("\n")
@@ -85,7 +89,7 @@ REPLAY_TRANSCRIPT_HEADER = (
 REPLAY_NEW_PROMPT_HEADER = "\nNew prompt:\n"
 
 
-def _format_turn(entry: dict) -> str:
+def _format_turn(entry: dict[str, Any]) -> str:
   kind = entry.get("kind", "?")
   content = entry.get("content", "")
   if kind == "user":
@@ -102,8 +106,8 @@ def _format_turn(entry: dict) -> str:
 
 
 def select_replay_entries(
-  entries: list[dict], *, max_turns: int, max_bytes: int,
-) -> tuple[list[dict], bool]:
+  entries: list[dict[str, Any]], *, max_turns: int, max_bytes: int,
+) -> tuple[list[dict[str, Any]], bool]:
   """Pick a bounded tail of conversation turns.
 
   Returns the kept entries and a flag telling the caller whether the
@@ -121,7 +125,7 @@ def select_replay_entries(
     truncated = True
 
   if max_bytes > 0:
-    rendered: list[str] = []
+    rendered: list[dict[str, Any]] = []
     total = 0
     for entry in reversed(turn_entries):
       chunk = _format_turn(entry)
@@ -138,7 +142,7 @@ def select_replay_entries(
 def build_replay_prompt(
   *,
   role_body: str,
-  entries: list[dict],
+  entries: list[dict[str, Any]],
   new_prompt: str,
   max_turns: int = 40,
   max_bytes: int = 200_000,

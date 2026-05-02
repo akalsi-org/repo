@@ -13,6 +13,7 @@ import sys
 ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path.cwd()).resolve()
 HOOK_SRC = ROOT / "tools" / "git_hooks"
 MANAGED_MARKER = "repo-managed-hook"
+MANAGED_HOOKS = ("pre-commit", "pre-push")
 
 
 def warn(msg: str) -> None:
@@ -134,7 +135,7 @@ def install_hooks() -> int:
   if hooks_dir is None:
     return 0
   count = 0
-  for name in ("pre-commit",):
+  for name in MANAGED_HOOKS:
     src = HOOK_SRC / name
     if not src.exists():
       warn(f"managed hook source missing: {src}")
@@ -241,7 +242,7 @@ def uninstall_hooks() -> int:
   if hooks_dir is None:
     return 0
   count = 0
-  for name in ("pre-commit",):
+  for name in MANAGED_HOOKS:
     if remove_managed_hook(hooks_dir / name) == "removed":
       note(f"removed git hook {name}")
       count += 1
@@ -251,7 +252,7 @@ def uninstall_hooks() -> int:
 def status(*, hooks: bool = True, vscode: bool = True) -> None:
   hooks_dir = git_path("rev-parse", "--git-path", "hooks")
   if hooks and hooks_dir is not None:
-    for name in ("pre-commit",):
+    for name in MANAGED_HOOKS:
       dst = hooks_dir / name
       state = "absent"
       try:

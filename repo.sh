@@ -46,6 +46,7 @@ export REPO_LOCAL="${REPO_LOCAL:-$REPO_LOCAL_DEFAULT}"
 export REPO_ARCH="${REPO_ARCH:-$(detect_arch)}"
 export REPO_TOOLCHAIN="${REPO_TOOLCHAIN:-$REPO_LOCAL/toolchain/$REPO_ARCH}"
 export REPO_SHELL=1
+export PYTHON_JIT="${PYTHON_JIT:-1}"
 
 mkdir -p "$REPO_LOCAL/toolchain/$REPO_ARCH" "$REPO_LOCAL/stamps"
 

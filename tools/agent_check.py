@@ -49,6 +49,16 @@ SKILL_INDEX_REL = ".agents/skills/index.md"
 SKILLS_DIR_REL = ".agents/skills"
 AGENTS_REL = "AGENTS.md"
 REPO_CONFIG_REL = ".agents/repo.json"
+SCHEMA_DIR_REL = "schemas"
+
+
+SCHEMA_FILES = (
+  "repo.schema.json",
+  "facet.schema.json",
+  "idea.schema.json",
+  "target.schema.json",
+  "pyext.schema.json",
+)
 
 
 @dataclass
@@ -343,6 +353,132 @@ def _str_list(raw: object, *, field: str) -> list[str]:
   return list(raw)
 
 
+def _schema_str_list(raw: object, *, path: str, field: str) -> list[str]:
+  if not isinstance(raw, list) or not all(isinstance(v, str) and v for v in raw):
+    raise ValueError(f"{path}:{field} must be non-empty string array")
+  return list(raw)
+
+
+def _schema_optional_str_list(raw: object, *, path: str, field: str) -> None:
+  if raw is not None:
+    _schema_str_list(raw, path=path, field=field)
+
+
+def _schema_non_empty_str(raw: object, *, path: str, field: str) -> str:
+  if not isinstance(raw, str) or not raw:
+    raise ValueError(f"{path}:{field} must be non-empty string")
+  return raw
+
+
+def _schema_object(raw: object, *, path: str) -> dict[str, object]:
+  if not isinstance(raw, dict):
+    raise ValueError(f"{path} must be object")
+  return raw
+
+
+def _validate_repo_config_schema(root: pathlib.Path) -> list[str]:
+  issues: list[str] = []
+  rel = REPO_CONFIG_REL
+  try:
+    raw = _schema_object(json.loads((root / rel).read_text(encoding="utf-8")), path=rel)
+    facet_config = raw.get("facet_config")
+    if not isinstance(facet_config, dict):
+      raise ValueError(f"{rel}:facet_config must be object")
+    for name, config in facet_config.items():
+      if not isinstance(name, str) or not name:
+        raise ValueError(f"{rel}:facet_config keys must be non-empty strings")
+      if not isinstance(config, dict):
+        raise ValueError(f"{rel}:facet_config.{name} must be object")
+  except (OSError, json.JSONDecodeError, ValueError) as exc:
+    issues.append(f"schema validation failed: {exc}")
+  return issues
+
+
+def _validate_facet_schema(root: pathlib.Path) -> list[str]:
+  issues: list[str] = []
+  for path in sorted((root / ".agents/facet").glob("*/facet.json")):
+    rel = path.relative_to(root).as_posix()
+    try:
+      raw = _schema_object(json.loads(path.read_text(encoding="utf-8")), path=rel)
+      name = _schema_non_empty_str(raw.get("name"), path=rel, field="name")
+      if name != path.parent.name and not (path.parent.name == "root" and name == "/"):
+        raise ValueError(f"{rel}:name must match facet directory")
+      _schema_non_empty_str(raw.get("description"), path=rel, field="description")
+      _schema_str_list(raw.get("owns"), path=rel, field="owns")
+      for field in ("commands", "checks", "docs", "consider"):
+        value = raw.get(field, [])
+        if not isinstance(value, list):
+          raise ValueError(f"{rel}:{field} must be array")
+      commands = raw.get("commands", [])
+      if not isinstance(commands, list):
+        raise ValueError(f"{rel}:commands must be array")
+      for idx, command in enumerate(commands):
+        if not isinstance(command, dict):
+          raise ValueError(f"{rel}:commands[{idx}] must be object")
+        _schema_non_empty_str(command.get("name"), path=rel, field=f"commands[{idx}].name")
+        _schema_non_empty_str(command.get("purpose"), path=rel, field=f"commands[{idx}].purpose")
+      checks = raw.get("checks", [])
+      if not isinstance(checks, list):
+        raise ValueError(f"{rel}:checks must be array")
+      for idx, check in enumerate(checks):
+        if not isinstance(check, dict):
+          raise ValueError(f"{rel}:checks[{idx}] must be object")
+        _schema_non_empty_str(check.get("name"), path=rel, field=f"checks[{idx}].name")
+        _schema_non_empty_str(check.get("command"), path=rel, field=f"checks[{idx}].command")
+      consider = raw.get("consider", [])
+      if not isinstance(consider, list):
+        raise ValueError(f"{rel}:consider must be array")
+      for idx, consideration in enumerate(consider):
+        if not isinstance(consideration, dict):
+          raise ValueError(f"{rel}:consider[{idx}] must be object")
+        _schema_str_list(consideration.get("paths"), path=rel, field=f"consider[{idx}].paths")
+        _schema_optional_str_list(
+          consideration.get("skills"), path=rel, field=f"consider[{idx}].skills"
+        )
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+      issues.append(f"schema validation failed: {exc}")
+  return issues
+
+
+def _validate_jsonl_schema(
+    root: pathlib.Path,
+    rel: str,
+    required: tuple[str, ...],
+) -> list[str]:
+  issues: list[str] = []
+  path = root / rel
+  try:
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+      if not line.strip():
+        continue
+      row = _schema_object(json.loads(line), path=f"{rel}:{lineno}")
+      for field in required:
+        _schema_non_empty_str(row.get(field), path=f"{rel}:{lineno}", field=field)
+  except (OSError, json.JSONDecodeError, ValueError) as exc:
+    issues.append(f"schema validation failed: {exc}")
+  return issues
+
+
+def schema_issues(root: pathlib.Path) -> list[str]:
+  issues: list[str] = []
+  for name in SCHEMA_FILES:
+    rel = f"{SCHEMA_DIR_REL}/{name}"
+    path = root / rel
+    try:
+      schema = _schema_object(json.loads(path.read_text(encoding="utf-8")), path=rel)
+      _schema_non_empty_str(schema.get("$schema"), path=rel, field="$schema")
+      _schema_non_empty_str(schema.get("title"), path=rel, field="title")
+      if schema.get("type") != "object":
+        raise ValueError(f"{rel}:type must be object")
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+      issues.append(f"schema validation failed: {exc}")
+  issues.extend(_validate_repo_config_schema(root))
+  issues.extend(_validate_facet_schema(root))
+  issues.extend(_validate_jsonl_schema(root, ".agents/targets/targets.jsonl", ("id", "title", "owner", "status")))
+  issues.extend(_validate_jsonl_schema(root, ".agents/ideas/ideas.jsonl", ("id", "title", "owner", "state", "target")))
+  return issues
+
+
 def stale_skill_gates(root: pathlib.Path) -> list[str]:
   """Parse skill portfolio table and flag gates >180d old.
 
@@ -537,6 +673,61 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
   return issues
 
 
+def _markdown_link_targets(text: str) -> list[str]:
+  targets: list[str] = []
+  for match in re.finditer(r"(?<!!)\[[^\]]+\]\(([^)]+)\)", text):
+    target = match.group(1).strip()
+    if (
+        not target
+        or target.startswith("#")
+        or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target)
+    ):
+      continue
+    targets.append(target)
+  return targets
+
+
+def doc_coverage_issues(root: pathlib.Path) -> list[str]:
+  issues: list[str] = []
+  for path in sorted([root / "README.md", *list((root / "docs").rglob("*.md"))]):
+    if not path.is_file():
+      continue
+    text = _read(path)
+    base = path.parent
+    rel = path.relative_to(root).as_posix()
+    for target in _markdown_link_targets(text):
+      target_path, _, _anchor = target.partition("#")
+      if not target_path:
+        continue
+      if not (base / target_path).resolve().is_file():
+        issues.append(f"markdown link missing in {rel}: {target}")
+
+  for facet_path in sorted((root / ".agents/facet").glob("*/facet.json")):
+    try:
+      raw = json.loads(facet_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+      continue
+    commands = raw.get("commands", [])
+    if not isinstance(commands, list):
+      continue
+    for command in commands:
+      if not isinstance(command, dict):
+        continue
+      name = command.get("name")
+      if not isinstance(name, str):
+        continue
+      adr = command.get("adr")
+      no_adr = command.get("no_adr")
+      if isinstance(adr, str) and adr:
+        if not (root / adr).is_file():
+          issues.append(f"command `{name}` ADR missing: {adr}")
+        continue
+      if isinstance(no_adr, str) and no_adr:
+        continue
+      issues.append(f"command `{name}` missing adr or no_adr in {facet_path.relative_to(root)}")
+  return issues
+
+
 # ---- zig toolchain smoke ---------------------------------------------------
 
 
@@ -687,6 +878,7 @@ def build_report(root: pathlib.Path) -> Report:
     | {"git diff --check", "./repo.sh agent_check"}
   )
   stale = stale_doc_issues(root)
+  stale.extend(schema_issues(root))
   stale.extend(stale_skill_gates(root))
   stale.extend(facet_orphan_paths(root))
   stale.extend(facet_consideration_conflicts(root))
@@ -735,7 +927,9 @@ def render_report(root: pathlib.Path, report: Report) -> str:
   if report.scorecard:
     parts.extend(["", "facet scorecard:"])
     for entry in report.scorecard:
-      flags_str = ", ".join(entry.get("flags", []))
+      flags_raw = entry.get("flags", [])
+      flags = [flag for flag in flags_raw if isinstance(flag, str)] if isinstance(flags_raw, list) else []
+      flags_str = ", ".join(flags)
       flags_display = f" [{flags_str}]" if flags_str else ""
       stale_display = f" stale={entry.get('stale_days')}d" if entry.get("stale_days") is not None else ""
       parts.append(
@@ -764,6 +958,11 @@ def main(argv: list[str] | None = None) -> int:
     ),
   )
   parser.add_argument(
+    "--doc-cov",
+    action="store_true",
+    help="Check markdown links and command ADR coverage.",
+  )
+  parser.add_argument(
     "--root",
     default=os.environ.get("REPO_ROOT") or os.getcwd(),
     help="Repository root (defaults to REPO_ROOT or cwd).",
@@ -776,8 +975,13 @@ def main(argv: list[str] | None = None) -> int:
     for m in messages:
       print(m)
     return 0 if ok else 1
+  if args.doc_cov:
+    issues = doc_coverage_issues(root)
+    print(_render_list("doc coverage issues:", issues))
+    return 1 if issues else 0
   if args.stale_only:
     stale = stale_doc_issues(root)
+    stale.extend(schema_issues(root))
     stale.extend(stale_skill_gates(root))
     stale.extend(facet_orphan_paths(root))
     stale.extend(facet_consideration_conflicts(root))

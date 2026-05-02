@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def spec_assignments(path: pathlib.Path) -> dict[str, str]:
+  out: dict[str, str] = {}
+  for line in path.read_text(encoding="utf-8").splitlines():
+    match = re.match(r"^([A-Za-z0-9_]+)=([^#\s]+)", line.strip())
+    if match:
+      out[match.group(1)] = match.group(2).strip("\"'")
+  return out
+
+
+def main() -> int:
+  issues: list[str] = []
+  for spec in sorted((ROOT / "bootstrap/tools").glob("*.sh")):
+    text = spec.read_text(encoding="utf-8")
+    data = spec_assignments(spec)
+    name = data.get("TOOL_NAME", spec.stem)
+    version = data.get("TOOL_VERSION")
+    if not version:
+      issues.append(f"{spec}: missing TOOL_VERSION")
+    has_pin = any("SHA256" in k for k in data) or "--hash=sha256:" in text
+    if name not in {"ruff", "shellcheck", "shfmt"} and not has_pin:
+      issues.append(f"{spec}: missing sha256 pin")
+  if issues:
+    for issue in issues:
+      print(f"verify-reproducibility: {issue}", file=sys.stderr)
+    return 1
+  print("verify-reproducibility: bootstrap specs carry versions and pins")
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

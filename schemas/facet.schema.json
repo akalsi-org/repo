@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Facet manifest",
+  "type": "object",
+  "required": ["name", "description", "owns"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "commands": {
+      "type": "array"
+    },
+    "checks": {
+      "type": "array"
+    },
+    "docs": {
+      "type": "array"
+    },
+    "consider": {
+      "type": "array"
+    }
+  },
+  "additionalProperties": true
+}

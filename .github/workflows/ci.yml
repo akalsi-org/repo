@@ -69,6 +69,12 @@ jobs:
       - name: Agent check
         run: ./repo.sh agent_check --stale-only
 
+      - name: Lint
+        run: ./repo.sh lint
+
+      - name: Type check
+        run: ./repo.sh mypy --strict tools/infra_pkg tools/personality_pkg tools/agent_check.py tools/ideas.py
+
       - name: Source mirrors
         run: ./repo.sh source_mirror list
 
@@ -89,6 +95,18 @@ jobs:
 
       - name: ideas tests
         run: ./repo.sh python3 -m unittest discover tools/ideas_tests
+
+      - name: command tests
+        run: ./repo.sh python3 -m unittest discover tools/test_tests
+
+      - name: coverage gate
+        run: ./repo.sh test --coverage --min=85
+
+      - name: Reproducibility verifier
+        run: ./repo.sh verify-reproducibility
+
+      - name: Dependency shape verifier
+        run: ./repo.sh python3 tools/dep_shape.py
 
       - name: ideas report
         run: ./repo.sh ideas report

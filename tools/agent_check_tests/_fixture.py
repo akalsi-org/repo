@@ -116,6 +116,25 @@ COMMANDS_FACET = """
 """
 
 
+TARGETS_JSONL = """
+{"id":"sample-target","title":"Sample target","owner":"commands","status":"active"}
+"""
+
+
+IDEAS_JSONL = """
+{"id":"sample-idea","title":"Sample idea","owner":"commands","state":"shaped","target":"sample-target"}
+"""
+
+
+SCHEMA_JSON = """
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fixture schema",
+  "type": "object"
+}
+"""
+
+
 class TempRepo:
   """Creates a self-contained git repo for a single unittest case."""
 
@@ -152,6 +171,16 @@ def _seed_repo_root() -> Path:
   write(_SEED_ROOT / "AGENTS.md", AGENTS_MD)
   write(_SEED_ROOT / ".agents/repo.json", REPO_JSON)
   write(_SEED_ROOT / ".agents/facet/commands/facet.json", COMMANDS_FACET)
+  write(_SEED_ROOT / ".agents/targets/targets.jsonl", TARGETS_JSONL)
+  write(_SEED_ROOT / ".agents/ideas/ideas.jsonl", IDEAS_JSONL)
+  for schema_name in (
+      "repo.schema.json",
+      "facet.schema.json",
+      "idea.schema.json",
+      "target.schema.json",
+      "pyext.schema.json",
+  ):
+    write(_SEED_ROOT / "schemas" / schema_name, SCHEMA_JSON)
   write(_SEED_ROOT / ".agents/skills/index.md", SKILL_INDEX)
   write(_SEED_ROOT / ".agents/skills/doc-sync/SKILL.md", DOC_SYNC_SKILL)
   write(_SEED_ROOT / "tools/sample-tool", "#!/bin/sh\nexit 0\n")

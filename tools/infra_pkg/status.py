@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-from typing import Sequence
+from typing import Any, Sequence
 
 from tools.infra_pkg import inventory, ssh
 
@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
   return p
 
 
-def _probe(host: dict, runner=None) -> bool:
+def _probe(host: dict[str, Any], runner: ssh.Runner | None = None) -> bool:
   runner = runner or ssh._default_runner
   res = ssh.ssh_run(host["ssh_target"], "true", runner=runner)
   return res.rc == 0
@@ -25,7 +25,7 @@ def run(
   args: argparse.Namespace,
   *,
   repo_root: pathlib.Path,
-  runner=None,
+  runner: ssh.Runner | None = None,
 ) -> int:
   data = inventory.load(repo_root)
   hosts = data["hosts"]

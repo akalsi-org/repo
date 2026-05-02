@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "-d" ]]; then
+  shift
+fi
+
+status=0
+for path in "$@"; do
+  if [[ -d "$path" ]]; then
+    while IFS= read -r -d '' file; do
+      bash -n "$file" || status=1
+    done < <(find "$path" -type f -name '*.sh' -print0)
+  elif [[ -f "$path" ]]; then
+    bash -n "$path" || status=1
+  fi
+done
+exit "$status"

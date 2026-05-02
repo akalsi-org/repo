@@ -16,3 +16,4 @@
 | 0012 | [Governance Pack v2 — Facet-Scoped Budget + Delegation](0012_governance_pack_v2_facet_scoped.md) |
 | 0013 | [Zig as the single C/C++ toolchain, libc++ only](0013_c_cpp_toolchain_zig_libcxx.md) |
 | 0014 | [Core infra: WireGuard underlay + VXLAN overlay + gossip discovery](0014_core_infra_fabric.md) |
+| 0016 | [Undeniable Quality Contract](0016_quality_bar.md) |

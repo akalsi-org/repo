@@ -52,6 +52,7 @@
   "commands": [
     {
       "name": "infra",
+      "adr": "docs/adr/0014_core_infra_fabric.md",
       "purpose": "Multi-provider VM fabric verb: adopt an SSH-reachable host onto the inventory, list adopted hosts and last-known reachability."
     }
   ],

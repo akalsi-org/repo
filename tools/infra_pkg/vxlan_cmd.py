@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 from tools.infra_pkg import inventory, ssh, units_render, vxlan, wg
+
+Host = dict[str, Any]
 
 
 def _err(msg: str) -> None:
@@ -25,16 +27,16 @@ def _ok(msg: str) -> None:
 # --- shared helpers ---------------------------------------------------
 
 
-def _find_host(data: dict, *, ssh_target: str) -> dict:
+def _find_host(data: dict[str, Any], *, ssh_target: str) -> Host:
   for h in data.get("hosts", []):
-    if h.get("ssh_target") == ssh_target:
-      return h
+    if isinstance(h, dict) and h.get("ssh_target") == ssh_target:
+      return cast(Host, h)
   raise SystemExit(
     f"infra: no adopted host with ssh_target {ssh_target!r}; run infra adopt first"
   )
 
 
-def _peer_table_from_host(host: dict) -> list[dict]:
+def _peer_table_from_host(host: Host) -> list[Host]:
   raw = host.get("peers")
   if raw is None:
     return []
@@ -45,7 +47,7 @@ def _peer_table_from_host(host: dict) -> list[dict]:
   return [p for p in raw if isinstance(p, dict)]
 
 
-def _full_peer_table(host: dict) -> list[dict]:
+def _full_peer_table(host: Host) -> list[Host]:
   """Return self + foreign peers as a unified peer table.
 
   /etc/hosts wants self too: each node should resolve its own
@@ -59,7 +61,7 @@ def _full_peer_table(host: dict) -> list[dict]:
   out = [self_entry] + _peer_table_from_host(host)
   # Dedup by (cluster_id, node_id), keep first.
   seen: set[tuple[int, int]] = set()
-  uniq: list[dict] = []
+  uniq: list[Host] = []
   for p in out:
     key = (int(p.get("cluster_id", 0)), int(p.get("node_id", 0)))
     if key in seen:
@@ -69,7 +71,7 @@ def _full_peer_table(host: dict) -> list[dict]:
   return uniq
 
 
-def _ensure_vxlan_fields(host: dict) -> None:
+def _ensure_vxlan_fields(host: Host) -> None:
   """Schema migration: existing host records get VXLAN fields populated lazily."""
   host.setdefault("inner_mtu", vxlan.DEFAULT_INNER_MTU)
   host.setdefault("vxlan_dstport", vxlan.DEFAULT_DSTPORT)
@@ -78,7 +80,7 @@ def _ensure_vxlan_fields(host: dict) -> None:
 def _install_vxlan_unit(
   ssh_target: str,
   sudo_word: str,
-  runner,
+  runner: ssh.Runner,
   cluster_id: int,
   execstart_block: str,
 ) -> None:
@@ -108,7 +110,7 @@ def _install_vxlan_unit(
 
 
 def _enable_and_restart_vxlan(
-  ssh_target: str, sudo_word: str, runner, cluster_id: int,
+  ssh_target: str, sudo_word: str, runner: ssh.Runner, cluster_id: int,
 ) -> None:
   unit = f"vxlan-overlay@{cluster_id}.service"
   cmd = (
