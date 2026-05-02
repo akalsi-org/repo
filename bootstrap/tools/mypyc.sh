@@ -30,7 +30,16 @@ if [[ ! -x "$REPO_TOOLCHAIN/bin/zig" ]] && ! command -v zig >/dev/null 2>&1; the
 fi
 
 rm -rf "$venv"
-python3 -m venv "$venv"
+# Use the pinned standalone musl Python explicitly. Bare `python3` may
+# resolve to the system Python (e.g. Debian) where the python3-venv
+# package isn't installed and ensurepip fails. The pinned interpreter
+# from `bootstrap/tools/python.sh` always has venv + ensurepip baked in.
+pinned_py="$REPO_TOOLCHAIN/bin/python3"
+if [[ ! -x "$pinned_py" ]]; then
+  printf 'mypyc: pinned python not found at %s\n' "$pinned_py" >&2
+  return 1 2>/dev/null || exit 1
+fi
+"$pinned_py" -m venv "$venv"
 
 cat >"$req" <<'REQ'
 --only-binary=:all:
