@@ -1,0 +1,61 @@
+{
+  "name": "core_infra",
+  "description": "Multi-provider VM fabric: WireGuard underlay, VXLAN overlay, gossip discovery, identity scheme, host tuning, and the `infra` verb surface (ADR-0014).",
+  "owns": [
+    ".agents/facet/core_infra/**",
+    "bootstrap/providers/**",
+    "tools/infra/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/repo.json"
+      ],
+      "skills": [
+        "core-infra-lead",
+        "doc-sync"
+      ],
+      "reason": "Cluster identity, seed list, and provider knobs live in repo config."
+    },
+    {
+      "paths": [
+        ".agents/skills/core-infra-lead/**"
+      ],
+      "skills": [
+        "core-infra-lead",
+        "doc-sync"
+      ],
+      "reason": "Skill body for the fabric agent role; primary ownership stays with the skills Facet (ADR-0004)."
+    },
+    {
+      "paths": [
+        "docs/adr/0014_core_infra_fabric.md"
+      ],
+      "skills": [
+        "core-infra-lead"
+      ],
+      "reason": "ADR contract for the fabric; primary ownership stays with the root Facet (docs/adr/**)."
+    },
+    {
+      "paths": [
+        ".gitignore"
+      ],
+      "skills": [
+        "core-infra-lead"
+      ],
+      "reason": "Credential-shape ignores (*.token, *.key, *.pem, .env) gate accidental commits of provider/runner secrets."
+    }
+  ],
+  "commands": [],
+  "checks": [],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "core_infra"
+    },
+    {
+      "surface": "README.md",
+      "projection": "core_infra"
+    }
+  ]
+}
