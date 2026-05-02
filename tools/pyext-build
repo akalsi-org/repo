@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build one typed Python module with mypyc for the standalone musl CPython.
+# python-build-standalone musl currently reports a baked
+# /install/include/python3.14 INCLUDEPY through raw sysconfig. That path does
+# not exist in this repo layout, so this wrapper uses python3-config for all
+# C extension flags.
+
+usage() {
+  cat <<'EOF'
+usage: pyext-build path/to/module.py [-- mypyc-arg ...]
+
+Compiles a typed Python module with mypyc and writes the extension to:
+  build/mypyc/$REPO_ARCH/<module><EXT_SUFFIX>
+
+Defaults:
+  CC="zig cc -target $REPO_ARCH-linux-musl"
+  CXX="zig c++ -target $REPO_ARCH-linux-musl"
+
+Set CC or CXX to override the compiler commands.
+EOF
+}
+
+if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+module_path="$1"
+shift
+if [[ "${1:-}" == "--" ]]; then
+  shift
+fi
+
+if [[ ! -f "$module_path" ]]; then
+  printf 'pyext-build: module not found: %s\n' "$module_path" >&2
+  exit 2
+fi
+
+repo_root="${REPO_ROOT:-$(pwd)}"
+repo_arch="${REPO_ARCH:-$(uname -m)}"
+case "$repo_arch" in
+  amd64) repo_arch=x86_64 ;;
+  arm64) repo_arch=aarch64 ;;
+esac
+target="${repo_arch}-linux-musl"
+toolchain="${REPO_TOOLCHAIN:-}"
+zig_bin="$(command -v zig || true)"
+if [[ -z "$zig_bin" && -n "$toolchain" && -x "$toolchain/bin/zig" ]]; then
+  zig_bin="$toolchain/bin/zig"
+fi
+
+python_bin="${PYTHON:-python3}"
+python_config="${PYTHON_CONFIG:-python3-config}"
+mypyc_bin="${MYPYC:-}"
+if [[ -z "$mypyc_bin" && -n "$toolchain" && -x "$toolchain/mypyc/bin/mypyc" ]]; then
+  mypyc_bin="$toolchain/mypyc/bin/mypyc"
+fi
+if [[ -z "$mypyc_bin" ]]; then
+  mypyc_bin="$(command -v mypyc || true)"
+fi
+if [[ -z "$mypyc_bin" ]]; then
+  printf 'pyext-build: skip: mypyc not installed; run ./repo.sh true after bootstrap cache includes mypyc\n' >&2
+  exit 77
+fi
+
+if [[ -z "${CC+x}" ]]; then
+  if [[ -z "$zig_bin" ]]; then
+    printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
+    exit 77
+  fi
+  export CC="$zig_bin cc -target $target"
+fi
+if [[ -z "${CXX+x}" ]]; then
+  if [[ -z "$zig_bin" ]]; then
+    printf 'pyext-build: skip: zig not available; pinned Zig bootstrap is required for musl extension builds\n' >&2
+    exit 77
+  fi
+  export CXX="$zig_bin c++ -target $target"
+fi
+
+mapfile -t py_flags < <("$python_config" --cflags --ldflags --embed)
+cflags="${py_flags[0]:-}"
+ldflags="${py_flags[*]:1}"
+export CFLAGS="${CFLAGS:-} $cflags"
+export LDFLAGS="${LDFLAGS:-} $ldflags"
+
+ext_suffix="$("$python_bin" -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or "")')"
+if [[ -z "$ext_suffix" ]]; then
+  printf 'pyext-build: cannot determine EXT_SUFFIX\n' >&2
+  exit 1
+fi
+
+abs_module="$(cd "$(dirname "$module_path")" && pwd -P)/$(basename "$module_path")"
+stem="$(basename "$module_path" .py)"
+out_dir="$repo_root/build/mypyc/$repo_arch"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/pyext-build.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
+
+cp "$abs_module" "$scratch/$stem.py"
+(
+  cd "$scratch"
+  "$mypyc_bin" "$@" "$stem.py"
+)
+
+mkdir -p "$out_dir"
+src_so="$(find "$scratch" -maxdepth 1 -type f -name "$stem*.so" | head -n1)"
+if [[ -z "$src_so" ]]; then
+  printf 'pyext-build: mypyc completed without producing %s*.so\n' "$stem" >&2
+  exit 1
+fi
+out_so="$out_dir/$stem$ext_suffix"
+cp "$src_so" "$out_so"
+printf '%s\n' "$out_so"

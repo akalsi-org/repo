@@ -31,6 +31,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -57,11 +58,12 @@ class Report:
   closeout: list[str]
   ownership: list[str]
   stale: list[str]
+  smoke: list[str]
   scorecard: list[dict[str, object]] | None = None
 
   @property
   def is_clean(self) -> bool:
-    return not self.stale
+    return not self.stale and not any(s.startswith("FAIL:") for s in self.smoke)
 
 
 # ---- changed paths ---------------------------------------------------------
@@ -534,6 +536,82 @@ def stale_doc_issues(root: pathlib.Path) -> list[str]:
   return issues
 
 
+# ---- pyext smoke -----------------------------------------------------------
+
+
+def pyext_smoke_issues(root: pathlib.Path) -> list[str]:
+  fixture = root / "tests/fixtures/pyext_smoke/mod.py"
+  builder = root / "tools/pyext-build"
+  if not fixture.is_file() or not builder.is_file():
+    return []
+
+  env = os.environ.copy()
+  env.setdefault("REPO_ROOT", str(root))
+  proc = subprocess.run(
+    [str(builder), str(fixture)],
+    cwd=root,
+    check=False,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env=env,
+  )
+  if proc.returncode == 77:
+    msg = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else "unknown skip"
+    return [f"SKIP: pyext smoke skipped: {msg}"]
+  if proc.returncode != 0:
+    msg = proc.stderr.strip() or proc.stdout.strip()
+    return [f"FAIL: pyext smoke build failed: {msg}"]
+
+  so_path = pathlib.Path(proc.stdout.strip().splitlines()[-1])
+  if not so_path.is_file():
+    return [f"FAIL: pyext smoke output missing: {so_path}"]
+
+  import_proc = subprocess.run(
+    [
+      "python3",
+      "-c",
+      (
+        "import importlib.util, pathlib; "
+        "p = pathlib.Path(__import__('sys').argv[1]); "
+        "spec = importlib.util.spec_from_file_location('mod', p); "
+        "m = importlib.util.module_from_spec(spec); "
+        "spec.loader.exec_module(m); "
+        "assert m.add(2, 3) == 5"
+      ),
+      str(so_path),
+    ],
+    cwd=root,
+    check=False,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+  )
+  if import_proc.returncode != 0:
+    msg = import_proc.stderr.strip() or import_proc.stdout.strip()
+    return [f"FAIL: pyext smoke import failed: {msg}"]
+
+  readelf = shutil.which("readelf")
+  if readelf:
+    dyn = subprocess.run(
+      [readelf, "-d", str(so_path)],
+      cwd=root,
+      check=False,
+      text=True,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+    )
+    if dyn.returncode != 0:
+      msg = dyn.stderr.strip() or dyn.stdout.strip()
+      return [f"FAIL: pyext smoke readelf failed: {msg}"]
+    if "libc.so.6" in dyn.stdout:
+      return [f"FAIL: pyext smoke found glibc dependency in {so_path}"]
+  else:
+    return ["SKIP: pyext smoke readelf check skipped: readelf not in PATH"]
+
+  return [f"PASS: pyext smoke built and imported {so_path}"]
+
+
 # ---- report assembly + CLI -------------------------------------------------
 
 
@@ -550,6 +628,7 @@ def build_report(root: pathlib.Path) -> Report:
   stale.extend(stale_skill_gates(root))
   stale.extend(facet_orphan_paths(root))
   stale.extend(facet_consideration_conflicts(root))
+  smoke = pyext_smoke_issues(root)
   scorecard = facet_budget_report(root)
   return Report(
     paths=paths,
@@ -558,6 +637,7 @@ def build_report(root: pathlib.Path) -> Report:
     closeout=closeout,
     ownership=ownership_issues(root, paths),
     stale=stale,
+    smoke=smoke,
     scorecard=scorecard,
   )
 
@@ -587,6 +667,8 @@ def render_report(root: pathlib.Path, report: Report) -> str:
     _render_list("facet ownership issues:", report.ownership),
     "",
     _render_list("stale-doc issues:", report.stale),
+    "",
+    _render_list("smoke checks:", report.smoke),
   ]
   if report.scorecard:
     parts.extend(["", "facet scorecard:"])
@@ -618,11 +700,15 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
   root = pathlib.Path(args.root).resolve()
   os.chdir(root)
-  report = build_report(root)
   if args.stale_only:
-    print(_render_list("stale-doc issues:", report.stale))
-    return 1 if report.stale else 0
+    stale = stale_doc_issues(root)
+    stale.extend(stale_skill_gates(root))
+    stale.extend(facet_orphan_paths(root))
+    stale.extend(facet_consideration_conflicts(root))
+    print(_render_list("stale-doc issues:", stale))
+    return 1 if stale else 0
   else:
+    report = build_report(root)
     print(render_report(root, report), end="")
   return 0 if report.is_clean else 1
 
