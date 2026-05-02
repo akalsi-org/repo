@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""`personality` verb entry point.
+
+Discovers REPO_ROOT, prepends it to sys.path, and hands off to the
+dispatcher in tools/personality_pkg/dispatch.py. Subcommands: list,
+init, as-root, ask, clear.
+"""
+from __future__ import annotations
+
+import os
+import pathlib
+import sys
+
+
+def _repo_root() -> pathlib.Path:
+  env = os.environ.get("REPO_ROOT")
+  if env:
+    return pathlib.Path(env).resolve()
+  return pathlib.Path(__file__).resolve().parent.parent
+
+
+ROOT = _repo_root()
+if str(ROOT) not in sys.path:
+  sys.path.insert(0, str(ROOT))
+
+from tools.personality_pkg.dispatch import main  # noqa: E402
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())

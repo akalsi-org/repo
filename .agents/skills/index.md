@@ -35,6 +35,7 @@ is agent-facing routing metadata; the actual procedures live in each
 | *any git operation* | `git-style` | Mirror commit shape; never force-push to `main`. |
 | *fork template into a new product* | `initialize`, `bootstrap-product` | Run `./repo.sh initialize`. |
 | `.agents/facet/core_infra/**`, `.agents/skills/core-infra-lead/**`, `bootstrap/providers/**`, `tools/infra/**`, `docs/adr/0014_core_infra_fabric.md` | `core-infra-lead`, `doc-sync` | Multi-provider VM fabric (ADR-0014). Re-read the ADR; never hard-code GitHub login/org; provider tokens stay at `~/<provider>.token`. |
+| `.agents/personalities/**`, `.agents/skills/personality/**`, `.agents/facet/personality/**`, `tools/personality`, `tools/personality_pkg/**`, `tools/personality_tests/**` | `personality`, `doc-sync` | Multi-CLI persistent personalities (issue #14). Spec: `docs/research/multi_cli_personality_skill_spec.md`. Definitions committed; session state per-machine + gitignored. Never hard-code GitHub login/org in role bodies — use `<login>`/`<org>` placeholders. |
 
 ## Tool-specific agent settings
 
@@ -73,6 +74,7 @@ See ADR-0011 for tier definitions. Gate_last_reviewed timestamps. Stale gates
 | `doc-sync` | Phase-Specific (landing) | 2026-04-26 | active |
 | `customize-cloud-agent` | Template-Admin | 2026-04-26 | active |
 | `core-infra-lead` | Phase-Specific (infra/runtime) | 2026-05-01 | active |
+| `personality` | Phase-Specific (infra/runtime) | 2026-05-01 | active |
 
 Quarterly audit mandatory. Add gate_last_reviewed to all skill SKILL.md headers.
 Run `./repo.sh agent_check --stale-gates` to flag >180d old gates.

@@ -1,0 +1,55 @@
+{
+  "name": "personality",
+  "description": "Multi-CLI persistent personalities: definitions, per-machine state, lock, transcript replay, and the `personality` verb (issue #14, spec docs/research/multi_cli_personality_skill_spec.md).",
+  "owns": [
+    ".agents/personalities/**",
+    ".agents/facet/personality/**",
+    "tools/personality",
+    "tools/personality_pkg/**",
+    "tools/personality_tests/**"
+  ],
+  "consider": [
+    {
+      "paths": [
+        ".agents/skills/personality/**"
+      ],
+      "skills": [
+        "doc-sync"
+      ],
+      "reason": "Skill body for the personality role; primary ownership stays with the skills Facet (ADR-0004)."
+    },
+    {
+      "paths": [
+        "docs/research/multi_cli_personality_skill.md",
+        "docs/research/multi_cli_personality_skill_spec.md"
+      ],
+      "skills": [
+        "doc-sync"
+      ],
+      "reason": "Spec contract for the personality skill; primary ownership stays with the root Facet (docs/research/**)."
+    }
+  ],
+  "commands": [
+    {
+      "name": "personality",
+      "purpose": "Multi-CLI personality verb (#14). Subcommands list (roster + last_active), init (scaffold definition), as-root (interactive persistent session via native resume or fresh seed), ask (one-shot non-interactive; native resume preferred, transcript replay fallback), and clear (wipe `.local/personalities/<name>/`; definition preserved). Definitions at `.agents/personalities/<name>/personality.md`, defaults at `.agents/personalities/_defaults.yaml`."
+    }
+  ],
+  "checks": [
+    {
+      "name": "personality_tests",
+      "command": "./repo.sh python3 -m unittest discover tools/personality_tests",
+      "closeout": true
+    }
+  ],
+  "docs": [
+    {
+      "surface": "AGENTS.md",
+      "projection": "personality"
+    },
+    {
+      "surface": "README.md",
+      "projection": "personality"
+    }
+  ]
+}

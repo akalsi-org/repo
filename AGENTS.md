@@ -84,6 +84,7 @@ phases. Template-admin tier is operator-only, infrequent.
 | Skill | Engage when | Definition |
 |-------|-------------|------------|
 | `core-infra-lead` | Standing up, adopting, or operating the multi-provider VM fabric (ADR-0014): WG underlay, VXLAN overlay, gossip discovery, `infra` verbs. | `.agents/skills/core-infra-lead/SKILL.md` |
+| `personality` | Running or delegating to named repo personalities (CEO, CFO, CTO, etc.) across Claude Code, Codex CLI, and GitHub Copilot CLI; persistent role sessions; cross-agent delegation; clearing a personality session. | `.agents/skills/personality/SKILL.md` |
 
 ## 3. Maintenance contract
 
@@ -195,6 +196,14 @@ remain isolated by worktree.
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...`. |
 | `tools/infra_tests/` | Unit tests for the adopt-side pure helpers; no real SSH or network. |
 | `.local/infra/inventory.json` | Adopted-host inventory (gitignored under `.local/`). |
+| `.agents/personalities/<name>/personality.md` | Committed personality definition: YAML front matter (`name`, `title`, `cli`, `model`, `effort`, `mode`, `delegates_to`, `tools.shell_allowlist`, `clear_policy`) + role body. Reviewed like skills. No concrete GitHub login or org may appear here; use `<login>`/`<org>` placeholders. |
+| `.agents/personalities/_defaults.yaml` | Per-CLI defaults: claude `claude-sonnet-4-6`, codex `gpt-5.5` low, copilot `gpt-5.4`. Plus `lock` (`ask_default_mode=wait`, `as_root_default_mode=fail`, `timeout=300s`, `stale_after=12h`) and `replay` (`max_turns=40`, `max_bytes=200000`, `drift_policy=refresh-and-continue`) blocks. |
+| `.agents/skills/personality/` | Skill body for the multi-CLI personalities verb (issue #14). Routable from Claude/Codex/Copilot via the existing `.claude/skills`, `.codex/skills`, `.github/instructions/skills` symlinks. |
+| `.agents/facet/personality/facet.json` | Facet manifest for the personalities slice: owned paths under `.agents/personalities/**`, `tools/personality`, `tools/personality_pkg/**`, `tools/personality_tests/**`. Declares the `personality` command and the `personality_tests` closeout check. |
+| `tools/personality` | `personality` verb dispatcher (Python). Subcommands `list`, `init`, `as-root`, `ask`, `clear`. |
+| `tools/personality_pkg/` | Implementation modules: `definitions.py` (YAML-subset front-matter + defaults parser), `state.py` (lock + state layout under `.local/personalities/`), `transcript.py` (append-only JSONL + replay-prompt builder), per-CLI adapters (`claude_adapter.py`, `codex_adapter.py`, `copilot_adapter.py`), `runner.py` (subprocess + exec wrapper), and `commands/` (one file per subcommand: `list_cmd.py`, `init_cmd.py`, `as_root_cmd.py`, `ask_cmd.py`, `clear_cmd.py`). |
+| `tools/personality_tests/` | Unit tests covering definition parsing, defaults override, lock semantics, transcript replay round-trip, per-adapter argv shape, native-resume vs replay fallback, dispatch routing, and full `ask` round-trip with a stub CLI runner. CLI invocations are mocked. |
+| `.local/personalities/<name>/` | Per-machine session state: `session_id`, `session_meta.yaml`, `transcript.jsonl`, `lock`, `last_invocation.json`, `last_stdout.txt`, `last_stderr.txt`, `replay_prompt.md`. Gitignored under `.local/`. |
 
 ## 8. Commands
 
@@ -208,6 +217,7 @@ remain isolated by worktree.
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 | `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), and wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later). deploy, provision land with later issues. |
+| `personality` | Python | Multi-CLI persistent personalities verb (issue #14, spec docs/research/multi_cli_personality_skill_spec.md). Subcommands list (roster + last_active), init <name> --cli claude/codex/copilot (scaffold a definition), as-root <name> (interactive persistent session via native CLI resume or fresh seed; lock fail-fast), ask <name> "<prompt>" (one-shot non-interactive; native resume preferred, transcript replay fallback; stdout = reply only; lock waits by default), and clear <name> (wipe `.local/personalities/<name>/`; definition preserved). Definitions at `.agents/personalities/<name>/personality.md`; defaults at `.agents/personalities/_defaults.yaml`. Per-CLI defaults: claude claude-sonnet-4-6, codex gpt-5.5 low, copilot gpt-5.4. Cross-CLI delegation: personality ask <name> "<prompt>" works as a Bash command inside any CLI whose tool/shell allowlist permits it. |
 
 ## 6. Naming
 

@@ -1,0 +1,23 @@
+schema_version: 1
+defaults:
+  claude:
+    command: claude
+    model: claude-sonnet-4-6
+    effort: null
+  codex:
+    command: codex
+    model: gpt-5.5
+    effort: low
+  copilot:
+    command: copilot
+    model: gpt-5.4
+    effort: null
+lock:
+  ask_default_mode: wait
+  as_root_default_mode: fail
+  timeout: 300s
+  stale_after: 12h
+replay:
+  max_turns: 40
+  max_bytes: 200000
+  drift_policy: refresh-and-continue
