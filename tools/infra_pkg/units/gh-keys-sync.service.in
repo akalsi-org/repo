@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync /root/.ssh/authorized_keys from GitHub keys for ${LOGIN}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# LOGIN is substituted by tools/infra/adopt at adopt time.
+# No concrete login lives in this template (ADR-0014).
+ExecStart=/usr/bin/env bash -c 'umask 077; tmp=$(mktemp); curl --fail --silent --show-error --max-time 15 https://github.com/${LOGIN}.keys -o "$tmp" && install -m 0600 -o root -g root "$tmp" /root/.ssh/authorized_keys && rm -f "$tmp"'

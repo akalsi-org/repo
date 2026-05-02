@@ -186,9 +186,15 @@ remain isolated by worktree.
 | `.local/stamps/` | Tool install stamps + `initialized` marker. |
 | `.claude/skills`, `.codex/skills`, `.github/instructions/skills` | Symlinks to `.agents/skills/`. Multi-agent surface. |
 | `.agents/skills/core-infra-lead/` | Agent role for the multi-provider VM fabric (ADR-0014). Owns the `infra` verb surface. |
-| `.agents/facet/core_infra/facet.json` | Facet manifest for the fabric: owned paths under `bootstrap/providers/**` and `tools/infra/**`, plus the agent role and ADR-0014. |
-| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Reads `~/<provider>.token`. Lands with later issues; Hetzner first. |
-| `tools/infra/` | `infra` verb implementation: `adopt`, `status`, `wg-up`, `deploy`, `provision`. Lands with issue #3. |
+| `.agents/facet/core_infra/facet.json` | Facet manifest for the fabric: owned paths under `bootstrap/providers/**`, `tools/infra`, `tools/infra_pkg/**`, `tools/infra_tests/**`, plus the agent role and ADR-0014. |
+| `bootstrap/providers/_template.sh` | Abstract provider shape: documents `create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list` and the `~/<provider>.token` mode-0600 convention. Not loaded at runtime. |
+| `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice. API surface is deferred; adopt is the only path to a Contabo host today. |
+| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin reading `~/<provider>.token`. Hetzner lands with later issues. |
+| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`. `wg-up`, `deploy`, `provision` land with later issues. |
+| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates) and systemd unit templates under `units/`. |
+| `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...`. |
+| `tools/infra_tests/` | Unit tests for the adopt-side pure helpers; no real SSH or network. |
+| `.local/infra/inventory.json` | Adopted-host inventory (gitignored under `.local/`). |
 
 ## 8. Commands
 
@@ -201,7 +207,7 @@ remain isolated by worktree.
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| infra (placeholder) | Pending | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt / status / wg-up / deploy / provision land with issue #3; the implementation is intentionally absent in this slice. |
+| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync) and status (list adopted hosts + last-known reachable). wg-up, deploy, provision land with later issues. |
 
 ## 6. Naming
 
@@ -221,6 +227,7 @@ remain isolated by worktree.
 |---------|---------------------------|-------|
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`). | Used by `gh` and any tool calling the GitHub API. Permissions on the file should be `0600`. |
 | VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`). | Read by `bootstrap/providers/<name>.sh` for `create_vm`/`destroy_vm`/`list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
+| GH-keys-sync (per-host systemd timer) | `https://github.com/<login>.keys` over plain HTTPS. | Installed by `infra adopt`. The `<login>` is **runtime-discovered** by `GET /user` against `~/github.token` (or `GITHUB_TOKEN`); operator can override with `--ssh-keys-github=<other>` or disable via `--ssh-keys=<path>`. **No concrete login is hard-coded anywhere in this repo.** Default refresh interval 15 minutes. Unit template lives at `tools/infra_pkg/units/gh-keys-sync.service.in` with a `${LOGIN}` placeholder substituted at adopt time. |
 
 ### Toolchain
 

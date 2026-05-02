@@ -2,7 +2,9 @@
   "name": "bootstrap",
   "description": "Toolchain bootstrap, source mirrors, bootstrap artifacts, and CI cache policy.",
   "owns": [
-    "bootstrap/**",
+    "bootstrap/fetch_*.sh",
+    "bootstrap/tools/**",
+    "bootstrap/vars/**",
     ".github/workflows/ci.yml",
     "tools/source_mirror",
     "tools/bootstrap_artifact_release.py",
