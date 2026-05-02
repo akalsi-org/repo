@@ -76,6 +76,8 @@ Every command runs through `./repo.sh <verb> [args]`:
 Fast-Python hot paths use pinned `mypy[mypyc]` with the Zig musl
 toolchain. Built `.so` modules ship with products; mypyc remains a
 dev/CI tool.
+`bootstrap/tools/librt.sh` source-builds mypyc's native runtime helper
+with the same Zig musl ABI.
 
 ## Integrations
 

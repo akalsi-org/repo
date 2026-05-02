@@ -235,6 +235,7 @@ remain isolated by worktree.
 |------|------|------|
 | Python (musl CPython 3.14) | `bootstrap/tools/python.sh` | Repo machinery interpreter. See ADR-0008. |
 | C/C++ (Zig + libc++) | `bootstrap/tools/zig.sh` | Single bundled C/C++ toolchain (clang + LLD + libc + libc++). Default target `*-linux-musl`; libstdc++ deliberately excluded. See ADR-0013. |
+| librt (source-built mypyc runtime) | `bootstrap/tools/librt.sh` | Builds mypyc's native runtime helper from sdist with the pinned Zig musl ABI. |
 | bwrap (Alpine minirootfs) | `bootstrap/tools/bwrap.sh` | Sandbox + musl loader source for the Python wrapper. |
 
 When adding a new third-party integration, document it in this table
@@ -319,7 +320,9 @@ musl loader from the bwrap bootstrap. `python.sh` declares
 Python and the host does not need musl installed. Alpine/static
 product portability is the baseline. Fast-Python hot paths compile
 with pinned `mypy[mypyc]` and the Zig musl toolchain; output `.so`
-modules ship with products while mypyc stays on dev/CI machines. CI also runs `./repo.sh system_test`,
+modules ship with products while mypyc stays on dev/CI machines.
+`bootstrap/tools/librt.sh` source-builds mypyc's native runtime helper
+with the same Zig musl ABI. CI also runs `./repo.sh system_test`,
 whose base primitive is a three-node cluster. Every node gets the same
 guest service port from the scenario manifest and a distinct cluster
 IP; host-side ports are assigned per node for external reachability
