@@ -191,7 +191,7 @@ remain isolated by worktree.
 | `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice. API surface is deferred; adopt is the only path to a Contabo host today. |
 | `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin reading `~/<provider>.token`. Hetzner lands with later issues. |
 | `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`. `deploy`, `provision` land with later issues. |
-| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates, WG keypair/config helpers in `wg.py` + `wg_cmd.py`) and systemd unit templates under `units/`, including `units/wg-overlay@.service.in` — the systemd templated form (`@.service`) for the WG underlay. `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime, and `WantedBy=multi-user.target` makes the unit reboot-survivable once enabled. |
+| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates, WG keypair/config helpers in `wg.py` + `wg_cmd.py`, VXLAN overlay + /etc/hosts renderers in `vxlan.py` + `vxlan_cmd.py`) and systemd unit templates under `units/`, including `units/wg-overlay@.service.in` and `units/vxlan-overlay@.service.in` — both are the systemd templated form (`@.service`). `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime, and `WantedBy=multi-user.target` makes both units reboot-survivable once enabled. The VXLAN unit additionally carries `Requires=wg-overlay@%i.service` + `After=` so VXLAN never starts before the WG underlay; `${EXECSTART_BLOCK}` is rendered from the local peer table at install time and contains the `ip link add` plus per-peer `bridge fdb append` lines. |
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...`. |
 | `tools/infra_tests/` | Unit tests for the adopt-side pure helpers; no real SSH or network. |
 | `.local/infra/inventory.json` | Adopted-host inventory (gitignored under `.local/`). |
@@ -207,7 +207,7 @@ remain isolated by worktree.
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), and wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later). deploy, provision land with later issues. |
+| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later), vxlan-up (stack VXLAN overlay on top of WG: one VNI per cluster, head-end-replicated FDB for broadcast, inner overlay 10.<cluster>.<node_high>.<node_low>/16, default inner MTU 1370, install + enable vxlan-overlay@cluster systemd unit, render /etc/hosts block bracketed by BEGIN/END markers), and hosts-render (re-render the /etc/hosts block from the current peer table without touching VXLAN). deploy, provision land with later issues. |
 
 ## 6. Naming
 
@@ -302,6 +302,69 @@ Private-key invariants (CODE-REVIEWABLE):
   `/etc/wireguard/wg-c<cluster>.key`, mode `0600`, owned `root:root`.
   It is never written under the repo root and never crosses back
   over SSH from the host. Inventory carries the public key only.
+
+### 13.1 VXLAN overlay + broadcast + /etc/hosts (issue #5)
+
+After the WG underlay smoke above succeeds, layer VXLAN on top.
+One VNI per cluster (`VNI == cluster_id`); FDB head-end-replicates
+broadcast to each peer's WG underlay IP. Inner subnet is
+`10.<C>.0.0/16` and inner MTU defaults to 1370.
+
+```
+./repo.sh infra vxlan-up <a>
+./repo.sh infra vxlan-up <b>
+./repo.sh infra hosts-render <a>
+./repo.sh infra hosts-render <b>
+```
+
+Acceptance checks (run on each host):
+
+```
+ssh <a> 'ip -d link show vxlan-c<C>'
+ssh <a> 'bridge fdb show dev vxlan-c<C>'
+ssh <a> 'getent hosts node-2.c<C>'
+ssh <a> 'ping -c 3 node-2.c<C>'
+ssh <b> 'ping -c 3 node-1.c<C>'
+ssh <a> 'systemctl is-enabled vxlan-overlay@<C>.service'
+```
+
+Broadcast smoke (one shell per node):
+
+```
+# receiver on <b>
+ssh <b> 'socat -u UDP-RECVFROM:9999,reuseaddr,fork -'
+# sender on <a>
+ssh <a> 'echo hi-c<C> | socat -u - UDP-DATAGRAM:10.<C>.255.255:9999,broadcast,reuseaddr'
+```
+
+Expected:
+- `ip -d link show vxlan-c<C>` reports `vxlan id <C> dev wg-c<C>
+  dstport 4789 nolearning` and `mtu 1370`.
+- `bridge fdb show` lists a `00:00:00:00:00:00 ... dst 10.200.<C>.x`
+  entry for every other peer.
+- `node-<id>.c<C>` resolves on every node and round-trips ICMP.
+- `socat` receiver on the broadcast port prints `hi-c<C>`.
+- `systemctl is-enabled` prints `enabled` (reboot survival).
+
+Cross-cluster isolation (CODE-REVIEWABLE + OPERATOR-VALIDATION):
+two clusters on the same hosts use distinct VNIs and distinct FDBs,
+so a broadcast on `10.<C1>.255.255` does not appear on
+`vxlan-c<C2>`. `nolearning` plus per-VNI head-end FDB enforces this.
+To validate live, repeat the broadcast smoke with cluster `<C2>` and
+observe the `<C1>` receiver gets nothing.
+
+Inner MTU override (per cluster, at vxlan-up time):
+
+```
+./repo.sh infra vxlan-up <a> --mtu 1280
+./repo.sh infra vxlan-up <b> --mtu 1280
+```
+
+`/etc/hosts` invariants (CODE-REVIEWABLE):
+- The managed block is bracketed by
+  `# BEGIN core-infra c<C>` / `# END core-infra c<C>` lines and
+  replaces only the bracketed region. Re-running `hosts-render`
+  yields a byte-identical file.
 
 ## 14. CI
 
