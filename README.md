@@ -36,6 +36,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `ideas` | Manage idea inventory, scoring, readiness gates, learning-ledger queries, stale idea reports, and evidence-backed next-bet activation. |
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
+| `infra` | Multi-provider VM fabric verb: adopt, status, wg-up, deploy. Placeholder; subcommands land with issue #3 (see ADR-0014). |
 
 `./repo.sh` with no args opens a subshell with `REPO_ROOT`,
 `REPO_LOCAL`, `REPO_TOOLCHAIN`, `REPO_ARCH`, `REPO_SHELL` exported.
@@ -61,15 +62,31 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `bootstrap/vars/local_cache_key.sh` | CI cache-key sentinel. |
 | `tools/` | Every command exposed via `./repo.sh`. |
 | `.local/` | Toolchain cache, stamps, build state. Never committed. |
+| `.agents/skills/core-infra-lead/` | Agent role for the multi-provider VM fabric (ADR-0014). |
+| `.agents/facet/core_infra/` | Facet manifest for the fabric: owned paths, considerations, doc projections. |
+| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Lands with later issues; Hetzner first. |
+| `tools/infra/` | `infra` verb implementation. Lands with issue #3. |
 
 ## Integrations
 
 | Service | Default credential source | Notes |
 |---------|---------------------------|-------|
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`) | Used by `gh` and any tool calling the GitHub API. |
+| VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`) | Read by `bootstrap/providers/<name>.sh` for `create_vm` / `destroy_vm` / `list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
 
 When you add a new third-party integration, document it in this
 table and in `AGENTS.md` Integrations. Never commit credentials.
+
+### GitHub identity is discovered at runtime, never hard-coded
+
+The fabric and downstream automation pull three things from GitHub:
+SSH `authorized_keys` (`https://github.com/<login>.keys`), the org for
+self-hosted Actions runners, and the `ghcr.io` namespace for
+systemd-deploy artifacts. In all three cases `<login>` and `<org>` are
+resolved at runtime via `GET /user` against `~/github.token`.
+**No tracked file in this repo may contain a concrete GitHub login or
+org as a literal string.** Operators can override per host; the
+default is always discovered. See ADR-0014.
 
 ## Agent compatibility
 

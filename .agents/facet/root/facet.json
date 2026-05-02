@@ -7,6 +7,7 @@
     "CONTEXT.md",
     "LICENSE",
     ".editorconfig",
+    ".gitignore",
     ".agents/repo.json",
     ".agents/facet/root/**",
     "docs/adr/**",

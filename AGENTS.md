@@ -79,6 +79,12 @@ phases. Template-admin tier is operator-only, infrequent.
 | `to-issues` | Breaking a plan into independently-grabbable GitHub issues. | `.agents/skills/to-issues/SKILL.md` |
 | `doc-sync` | Changing AGENTS.md, README, CONTEXT.md, docs/adr/, .agents/skills/index.md, .agents/kb_src/, layout, command docs. | `.agents/skills/doc-sync/SKILL.md` |
 
+**Infra / runtime phase:**
+
+| Skill | Engage when | Definition |
+|-------|-------------|------------|
+| `core-infra-lead` | Standing up, adopting, or operating the multi-provider VM fabric (ADR-0014): WG underlay, VXLAN overlay, gossip discovery, `infra` verbs. | `.agents/skills/core-infra-lead/SKILL.md` |
+
 ## 3. Maintenance contract
 
 Agents working in this repository must preserve the template as a
@@ -178,6 +184,10 @@ remain isolated by worktree.
 | `.local/toolchain/$REPO_ARCH/` | Toolchain install prefix, including pinned Python. Cached, not committed. |
 | `.local/stamps/` | Tool install stamps + `initialized` marker. |
 | `.claude/skills`, `.codex/skills`, `.github/instructions/skills` | Symlinks to `.agents/skills/`. Multi-agent surface. |
+| `.agents/skills/core-infra-lead/` | Agent role for the multi-provider VM fabric (ADR-0014). Owns the `infra` verb surface. |
+| `.agents/facet/core_infra/facet.json` | Facet manifest for the fabric: owned paths under `bootstrap/providers/**` and `tools/infra/**`, plus the agent role and ADR-0014. |
+| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin (`create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list`). Reads `~/<provider>.token`. Lands with later issues; Hetzner first. |
+| `tools/infra/` | `infra` verb implementation: `adopt`, `status`, `wg-up`, `deploy`, `provision`. Lands with issue #3. |
 
 ## 8. Commands
 
@@ -190,6 +200,7 @@ remain isolated by worktree.
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
+| infra (placeholder) | Pending | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt / status / wg-up / deploy / provision land with issue #3; the implementation is intentionally absent in this slice. |
 
 ## 6. Naming
 
@@ -207,11 +218,19 @@ remain isolated by worktree.
 | Service | Default credential source | Notes |
 |---------|---------------------------|-------|
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`). | Used by `gh` and any tool calling the GitHub API. Permissions on the file should be `0600`. |
+| VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`). | Read by `bootstrap/providers/<name>.sh` for `create_vm`/`destroy_vm`/`list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
 
 When adding a new third-party integration, document it in this table
 and in `README.md` Integrations. Read credentials from
 `~/<service>.token` or an environment variable; never commit them to
 the repo and never log them.
+
+GitHub-derived identity (the `<login>` for SSH `authorized_keys` sync,
+the `<org>` for self-hosted runners, the `ghcr.io` namespace for
+systemd-deploy artifacts) is **discovered at runtime** via
+`GET /user` against `~/github.token`. No tracked file in this repo
+may contain a concrete GitHub login or org as a literal string.
+Operators may override per host. See ADR-0014.
 
 ## 14. CI
 

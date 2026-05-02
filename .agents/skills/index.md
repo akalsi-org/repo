@@ -34,6 +34,7 @@ is agent-facing routing metadata; the actual procedures live in each
 | *contested load-bearing decision with no ADR resolution* | `debate-and-decide` | Two sub-agents argue opposing sides; parent escalates only preference-shaped cruxes to the user. |
 | *any git operation* | `git-style` | Mirror commit shape; never force-push to `main`. |
 | *fork template into a new product* | `initialize`, `bootstrap-product` | Run `./repo.sh initialize`. |
+| `.agents/facet/core_infra/**`, `.agents/skills/core-infra-lead/**`, `bootstrap/providers/**`, `tools/infra/**`, `docs/adr/0014_core_infra_fabric.md` | `core-infra-lead`, `doc-sync` | Multi-provider VM fabric (ADR-0014). Re-read the ADR; never hard-code GitHub login/org; provider tokens stay at `~/<provider>.token`. |
 
 ## Tool-specific agent settings
 
@@ -71,6 +72,7 @@ See ADR-0011 for tier definitions. Gate_last_reviewed timestamps. Stale gates
 | `to-issues` | Phase-Specific (landing) | 2026-04-26 | active |
 | `doc-sync` | Phase-Specific (landing) | 2026-04-26 | active |
 | `customize-cloud-agent` | Template-Admin | 2026-04-26 | active |
+| `core-infra-lead` | Phase-Specific (infra/runtime) | 2026-05-01 | active |
 
 Quarterly audit mandatory. Add gate_last_reviewed to all skill SKILL.md headers.
 Run `./repo.sh agent_check --stale-gates` to flag >180d old gates.
