@@ -38,6 +38,7 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `source_mirror` | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
 | `infra` | Multi-provider VM fabric verb. `adopt` brings an SSH-reachable host onto the inventory with WireGuard probe + tuned sysctls + GH-keys-sync; `status` lists adopted hosts and last-known reachability; `wg-up <ssh_target>` generates the per-cluster WG keypair on the host, renders `/etc/wireguard/wg-c<cluster>.conf` from the local peer table, installs the `wg-overlay@<cluster>.service` unit, and enables it for reboot survival; `wg-peer-add <a> <b>` registers two adopted hosts as peers symmetrically and re-renders both configs; `vxlan-up <ssh_target>` stacks the per-cluster VXLAN overlay on top of WG (one VNI per cluster, head-end-replicated FDB for broadcast, inner MTU 1370 by default), installs the `vxlan-overlay@<cluster>.service` unit, and renders the `/etc/hosts` block; `hosts-render <ssh_target>` re-renders the `/etc/hosts` block from the current peer table without touching VXLAN. `deploy`, `provision` land with later issues. See ADR-0014. |
+| `personality` | Multi-CLI persistent personalities. `list` shows the roster + last_active; `init <name> --cli claude\|codex\|copilot` scaffolds a definition; `as-root <name>` opens an interactive persistent session via native CLI resume (or fresh seed); `ask <name> "<prompt>"` runs a one-shot non-interactive call (native resume preferred, transcript replay fallback) and prints only the reply on stdout; `clear <name>` wipes `.local/personalities/<name>/` while preserving the definition. Definitions live under `.agents/personalities/<name>/personality.md`; defaults at `.agents/personalities/_defaults.yaml`. |
 
 `./repo.sh` with no args opens a subshell with `REPO_ROOT`,
 `REPO_LOCAL`, `REPO_TOOLCHAIN`, `REPO_ARCH`, `REPO_SHELL` exported.
@@ -72,6 +73,12 @@ Every command runs through `./repo.sh <verb> [args]`:
 | `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`, `vxlan-up`, `hosts-render`. |
 | `tools/infra_pkg/` | Implementation modules + systemd unit templates (`units/gh-keys-sync.{service,timer}.in`, `units/wg-overlay@.service.in`, `units/vxlan-overlay@.service.in`) used by `infra adopt`, `infra wg-up`, and `infra vxlan-up`. The WG and VXLAN templates are the systemd templated form (`@.service`) — `${CLUSTER_ID}` and (for VXLAN) `${EXECSTART_BLOCK}` are substituted at install time, `%i` carries the cluster id at runtime. |
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...` for operators who prefer the explicit script path. |
+| `.agents/personalities/` | Committed personality definitions (`<name>/personality.md`) + `_defaults.yaml` (per-CLI model + effort defaults). Reviewed like skills. |
+| `.agents/skills/personality/` | Skill body for the multi-CLI personalities verb (issue #14). Routable from Claude/Codex/Copilot via the existing skill-symlink convention. |
+| `.agents/facet/personality/` | Facet manifest for the personalities slice: owned paths, the `personality` command, and the `personality_tests` closeout check. |
+| `tools/personality` | `personality` verb dispatcher (Python). Subcommands `list`, `init`, `as-root`, `ask`, `clear`. |
+| `tools/personality_pkg/` | Implementation modules: `definitions.py` (front-matter + defaults parser), `state.py` (lock + state layout under `.local/personalities/`), `transcript.py` (append-only JSONL + replay-prompt builder), per-CLI adapters (`claude_adapter.py`, `codex_adapter.py`, `copilot_adapter.py`), `runner.py` (subprocess + exec wrapper), and `commands/` (one file per subcommand). |
+| `.local/personalities/<name>/` | Per-machine session state: `session_id`, `session_meta.yaml`, `transcript.jsonl`, `lock`, `last_invocation.json`, `last_stdout.txt`, `last_stderr.txt`, `replay_prompt.md`. Gitignored under `.local/`. |
 
 Fast-Python hot paths use pinned `mypy[mypyc]` with the Zig musl
 toolchain. Built `.so` modules ship with products; mypyc remains a
