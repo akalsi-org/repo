@@ -5,6 +5,8 @@ Subcommands:
   infra status       [--probe]
   infra wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
   infra wg-peer-add  <node_a_ssh> <node_b_ssh>
+  infra provision-hetzner
+  infra decommission <provider> <vm_id>
 
 Caveman style on user-facing strings.
 """
@@ -23,7 +25,7 @@ def _repo_root() -> pathlib.Path:
   return pathlib.Path(__file__).resolve().parents[2]
 
 
-SUBCOMMANDS = ("adopt", "status", "wg-up", "wg-peer-add")
+SUBCOMMANDS = ("adopt", "status", "wg-up", "wg-peer-add", "provision-hetzner", "decommission")
 
 
 def _usage() -> str:
@@ -33,6 +35,8 @@ def _usage() -> str:
     "  status       [--probe]\n"
     "  wg-up        <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
     "  wg-peer-add  <node_a_ssh> <node_b_ssh>\n"
+    "  provision-hetzner [--arch arm64|amd64] [--region R] [--type T]\n"
+    "  decommission <provider> <vm_id>\n"
   )
 
 
@@ -63,4 +67,10 @@ def main(argv: Sequence[str] | None = None) -> int:
   if sub == "wg-peer-add":
     from tools.infra_pkg.wg_cmd import wg_peer_add_main
     return wg_peer_add_main(rest, repo_root=root)
+  if sub == "provision-hetzner":
+    from tools.infra_pkg.provision_hetzner import main as provision_hetzner_main
+    return provision_hetzner_main(rest, repo_root=root)
+  if sub == "decommission":
+    from tools.infra_pkg.decommission import main as decommission_main
+    return decommission_main(rest, repo_root=root)
   return 2

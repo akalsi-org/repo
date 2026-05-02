@@ -2,7 +2,8 @@
 """`infra` verb entry point.
 
 Discovers REPO_ROOT, prepends it to sys.path, and hands off to the
-dispatcher in tools/infra_pkg/dispatch.py. Subcommands: adopt, status.
+dispatcher in tools/infra_pkg/dispatch.py. Subcommands: adopt, status,
+wg-up, wg-peer-add, provision-hetzner, decommission.
 """
 from __future__ import annotations
 

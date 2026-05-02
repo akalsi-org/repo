@@ -83,3 +83,24 @@ def upsert(repo_root: pathlib.Path, host: dict[str, Any]) -> dict[str, Any]:
   )
   save(repo_root, data)
   return data
+
+
+def remove_by_provider_vm_id(
+  repo_root: pathlib.Path,
+  provider_label: str,
+  vm_id: str,
+) -> tuple[dict[str, Any], int]:
+  """Remove hosts matching provider label + provider-native VM id."""
+  data = load(repo_root)
+  before = len(data["hosts"])
+  data["hosts"] = [
+    h for h in data["hosts"]
+    if not (
+      h.get("provider_label") == provider_label
+      and str(h.get("hetzner_vm_id", "")) == str(vm_id)
+    )
+  ]
+  removed = before - len(data["hosts"])
+  if removed:
+    save(repo_root, data)
+  return data, removed

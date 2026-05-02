@@ -189,9 +189,9 @@ remain isolated by worktree.
 | `.agents/facet/core_infra/facet.json` | Facet manifest for the fabric: owned paths under `bootstrap/providers/**`, `tools/infra`, `tools/infra_pkg/**`, `tools/infra_tests/**`, plus the agent role and ADR-0014. |
 | `bootstrap/providers/_template.sh` | Abstract provider shape: documents `create_vm`/`destroy_vm`/`list_vms`/`region_list`/`size_list` and the `~/<provider>.token` mode-0600 convention. Not loaded at runtime. |
 | `bootstrap/providers/contabo.sh` | Contabo provider — label-only stub in this slice. API surface is deferred; adopt is the only path to a Contabo host today. |
-| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin reading `~/<provider>.token`. Hetzner lands with later issues. |
-| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`. `deploy`, `provision` land with later issues. |
-| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates, WG keypair/config helpers in `wg.py` + `wg_cmd.py`) and systemd unit templates under `units/`, including `units/wg-overlay@.service.in` — the systemd templated form (`@.service`) for the WG underlay. `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime, and `WantedBy=multi-user.target` makes the unit reboot-survivable once enabled. |
+| `bootstrap/providers/<name>.sh` | Per-provider provisioning plugin reading `~/<provider>.token`. Hetzner uses CAX ARM64 as default; x86 capacity routes through Contabo BYO via `adopt`. |
+| `tools/infra` | `infra` verb dispatcher (Python). Subcommands `adopt`, `status`, `wg-up`, `wg-peer-add`, `provision-hetzner`, `decommission`. `deploy` lands with later issues. |
+| `tools/infra_pkg/` | Implementation modules (adopt orchestrator, Hetzner provision/decommission flows, lscpu/identity helpers, GH discovery, inventory, sysctl + tuned templates, WG keypair/config helpers in `wg.py` + `wg_cmd.py`) and systemd unit templates under `units/`, including `units/wg-overlay@.service.in` — the systemd templated form (`@.service`) for the WG underlay. `${CLUSTER_ID}` is substituted at install time, `%i` carries the cluster id at runtime, and `WantedBy=multi-user.target` makes the unit reboot-survivable once enabled. |
 | `tools/infra_pkg/adopt.sh` | Bash shim that delegates to `tools/infra adopt ...`. |
 | `tools/infra_tests/` | Unit tests for the adopt-side pure helpers; no real SSH or network. |
 | `.local/infra/inventory.json` | Adopted-host inventory (gitignored under `.local/`). |
@@ -207,7 +207,7 @@ remain isolated by worktree.
 | `setup` | Python | Install / status / uninstall managed git hooks and configured VSCode plugins. |
 | `source_mirror` | Python | List or upload configured byte-identical upstream source mirrors. |
 | `system_test` | Python | Run repo-level clustered plain and bwrap backend smoke tests from the scenario manifest. |
-| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), and wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later). deploy, provision land with later issues. |
+| `infra` | Python | Multi-provider VM fabric verb (ADR-0014). Subcommands adopt (SSH-reachable host onto the inventory; runtime-discovered GH login for keys-sync), status (list adopted hosts + last-known reachable), wg-up (per-host WireGuard keypair gen + config render + wg-overlay@cluster systemd unit install/enable/start; reboot-survivable via WantedBy=multi-user.target; private key mode 0600 owned root at /etc/wireguard/wg-c<cluster>.key and never crosses back over SSH), wg-peer-add (symmetric peer registration in inventory + re-render + restart on both hosts; static peer list, gossip lands later), provision-hetzner (API-created Hetzner Cloud node with CAX ARM64 default + cloud-init fabric bootstrap), and decommission (destroy supported provider VM + remove inventory). deploy lands with later issues. |
 
 ## 6. Naming
 
@@ -226,6 +226,7 @@ remain isolated by worktree.
 | Service | Default credential source | Notes |
 |---------|---------------------------|-------|
 | GitHub | `GITHUB_TOKEN` env, else `~/github.token` (mode `0600`). | Used by `gh` and any tool calling the GitHub API. Permissions on the file should be `0600`. |
+| Hetzner Cloud | `HETZNER_TOKEN` env, else `~/hetzner.token` (mode `0600`). | API provisioning provider. ARM64 CAX is default instance family; x86 routes through Contabo BYO via `adopt` (#3), though CX/CCX list support exists for explicit API use. Token stays on operator machine and never lands on hosts. |
 | VM provider (Hetzner, etc.) | `~/<provider>.token` (mode `0600`). | Read by `bootstrap/providers/<name>.sh` for `create_vm`/`destroy_vm`/`list_vms`. Tokens stay on the operator's machine; never pushed to fabric hosts. See ADR-0014. |
 | GH-keys-sync (per-host systemd timer) | `https://github.com/<login>.keys` over plain HTTPS. | Installed by `infra adopt`. The `<login>` is **runtime-discovered** by `GET /user` against `~/github.token` (or `GITHUB_TOKEN`); operator can override with `--ssh-keys-github=<other>` or disable via `--ssh-keys=<path>`. **No concrete login is hard-coded anywhere in this repo.** Default refresh interval 15 minutes. Unit template lives at `tools/infra_pkg/units/gh-keys-sync.service.in` with a `${LOGIN}` placeholder substituted at adopt time. |
 
