@@ -1,0 +1,18 @@
+[Unit]
+Description=WireGuard underlay wg-c%i for cluster ${CLUSTER_ID}
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# CLUSTER_ID is substituted by tools/infra_pkg/wg_cmd at wg-up time.
+# %i is the systemd instance (cluster id) and resolves the wg-quick
+# interface name wg-c<cluster>. The unit is enabled per-instance, so
+# `systemctl enable wg-overlay@<cluster>.service` survives reboot via
+# WantedBy=multi-user.target below.
+ExecStart=/usr/bin/wg-quick up wg-c%i
+ExecStop=/usr/bin/wg-quick down wg-c%i
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
