@@ -1,12 +1,14 @@
 """`infra` verb dispatcher entry point.
 
 Subcommands:
-  infra adopt         <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
-  infra status        [--probe]
-  infra wg-up         <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
-  infra wg-peer-add   <node_a_ssh> <node_b_ssh>
-  infra vxlan-up      <ssh_target> [--mtu N] [--dstport N]
-  infra hosts-render  <ssh_target>
+  infra adopt              <provider_label> <ssh_target> <cluster_id> <node_id> [seeds...]
+  infra status             [--probe]
+  infra wg-up              <ssh_target> [--listen-port N] [--endpoint HOST:PORT]
+  infra wg-peer-add        <node_a_ssh> <node_b_ssh>
+  infra vxlan-up           <ssh_target> [--mtu N] [--dstport N]
+  infra hosts-render       <ssh_target>
+  infra provision-hetzner  [--arch arm64|amd64] [--region R] [--type T]
+  infra decommission       <provider> <vm_id>
 
 Caveman style on user-facing strings.
 """
@@ -27,18 +29,21 @@ def _repo_root() -> pathlib.Path:
 
 SUBCOMMANDS = (
   "adopt", "status", "wg-up", "wg-peer-add", "vxlan-up", "hosts-render",
+  "provision-hetzner", "decommission",
 )
 
 
 def _usage() -> str:
   return (
     "usage: infra <subcommand> [args...]\n"
-    "  adopt         <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
-    "  status        [--probe]\n"
-    "  wg-up         <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
-    "  wg-peer-add   <node_a_ssh> <node_b_ssh>\n"
-    "  vxlan-up      <ssh_target> [--mtu N] [--dstport N]\n"
-    "  hosts-render  <ssh_target>\n"
+    "  adopt              <provider> <ssh_target> <cluster_id> <node_id> [seeds...]\n"
+    "  status             [--probe]\n"
+    "  wg-up              <ssh_target> [--listen-port N] [--endpoint HOST:PORT]\n"
+    "  wg-peer-add        <node_a_ssh> <node_b_ssh>\n"
+    "  vxlan-up           <ssh_target> [--mtu N] [--dstport N]\n"
+    "  hosts-render       <ssh_target>\n"
+    "  provision-hetzner  [--arch arm64|amd64] [--region R] [--type T]\n"
+    "  decommission       <provider> <vm_id>\n"
   )
 
 
@@ -75,4 +80,10 @@ def main(argv: Sequence[str] | None = None) -> int:
   if sub == "hosts-render":
     from tools.infra_pkg.vxlan_cmd import hosts_render_main
     return hosts_render_main(rest, repo_root=root)
+  if sub == "provision-hetzner":
+    from tools.infra_pkg.provision_hetzner import main as provision_hetzner_main
+    return provision_hetzner_main(rest, repo_root=root)
+  if sub == "decommission":
+    from tools.infra_pkg.decommission import main as decommission_main
+    return decommission_main(rest, repo_root=root)
   return 2
